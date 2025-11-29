@@ -1,0 +1,109 @@
+Scaffolding & file structure (must produce)
+
+/ (repo root)
+
+package.json, tsconfig.json, tailwind.config.js
+
+next.config.js
+
+prisma/schema.prisma
+
+/prisma/seed.ts
+
+/pages/_app.tsx, /pages/index.tsx
+
+/pages/api/auth/[...nextauth].ts
+
+/pages/api/qr/generate.ts
+
+/pages/api/link/patient.ts
+
+/pages/api/meetings/create.ts
+
+/pages/api/meetings/[id]/startRecording.ts
+
+/pages/api/meetings/[id]/uploadRecording.ts
+
+/pages/api/ai/notes/generate.ts
+
+/pages/api/transcripts/callback.ts
+
+/components/* : Nav, DoctorCard, QRGenerator, MeetingUI, ConsentModal, SurveyBuilder
+
+/lib/* : db.ts (Prisma), s3.ts, daily.ts (Daily helper), ai.ts (AssemblyAI + OpenAI wrappers), auth.ts (role guards)
+
+/styles/* : tailwind CSS
+
+/scripts/* : start-worker.ts (worker), migrate-and-seed.sh
+
+/README.md
+
+.env.example
+
+Important implementation details (do not skip)
+
+All API calls must verify NextAuth session and role.
+
+QR token must be one-time or time-limited (store token in DB with expiration).
+
+When saving audio/transcript URLs, generate signed URLs for frontend access.
+
+Provide a fallback client-side audio-record-and-upload snippet (navigator.mediaDevices + MediaRecorder) that activates only if server-side recording is unavailable.
+
+Add an "Edit Note" UI for doctors to correct AI-generated notes before final save.
+
+Add lightweight logging to /api/audit/log writes (user, action, metadata).
+
+Include minimal Cypress or Playwright test that automates the QR link -> signup -> linking flow.
+
+Performance & cost hints (include in README)
+
+Transcription + LLM calls are the main running cost. Offer option in README to use smaller, cheaper transcription or local open-source models for POC.
+
+Batch summarization or coalescing transcripts helps reduce token usage.
+
+Security checklist (to show in README)
+
+TLS
+
+RBAC
+
+Consent recorded
+
+Audit trail & immutable logs
+
+Data retention & deletion endpoints (implement /api/data/delete-request)
+
+Edge-cases & hard constraints to handle in code
+
+Prevent linking if QR token is expired or already used.
+
+If participant denies consent, disable recording and stop any upload.
+
+If transcription fails, keep recording stored and mark meeting status as "transcription_failed" and notify doctor.
+
+LLM hallucination mitigation: include a short validator that flags meds/tests mentioned by LLM if not present in transcript — mark such fields as "requires_review".
+
+What I expect Replit AI to output
+
+A runnable Next.js TypeScript project that starts with pnpm install && pnpm dev (or npm equivalents).
+
+Prisma migrations + seed script.
+
+Clear TODO markers where provider API keys must be added (DAILY, ASSEMBLYAI, OPENAI).
+
+Working demo UI for QR generation, linking flow, meeting page with Daily iframe integration, client-side recording fallback, and a visible AI-generated note after "upload & process" flow.
+
+README with setup, running, and testing instructions.
+
+Final instructions to generator
+
+Prioritize the core flows first: Auth, QR linking, meeting create/join, recording upload, transcription hook, AI note generation, and doctor dashboard.
+
+Keep the UI simple and professional (tailwind + accessible components). Focus on functionality; a slick design is secondary.
+
+Add thorough inline comments for all integrations (why steps exist, where to change env vars, how to swap Daily for Twilio).
+
+If anything cannot be completed due to Replit environment limits (e.g., background workers), provide a clear fallback and instructions to run the worker manually.
+
+Generate the full project now. Start by scaffolding package.json, tsconfig.json, prisma schema, and a minimal Next.js app. Then generate API routes and components progressively. Provide sample .env.example and a README with precise setup steps and sample curl commands for key endpoints (qr generate, link patient, create meeting, simulate upload).

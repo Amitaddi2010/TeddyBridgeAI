@@ -1,0 +1,141 @@
+Project goal
+------------
+Create a full-stack MVP web application named **TeleClinic** that enables:
+- QR-based patient signup & linking to a doctor.
+- Secure one-to-one video calls (doctor↔patient and doctor↔doctor) with recording.
+- Automatic transcription and AI-generated consult notes attached to patient records.
+- A doctor dashboard (appointments, linked patients, surveys, call notes).
+- Basic survey creator & push to patients.
+- Consent management and audit logging.
+
+Tech stack (must use)
+---------------------
+- Frontend: Next.js (TypeScript), React, TailwindCSS
+- Backend: Next.js API routes (Node.js + TypeScript) so single deployable Replit project.
+- Database: PostgreSQL (Prisma ORM)
+- Realtime/video: Daily.co (or pluggable provider) for WebRTC; server side tokens via API.
+- Storage: AWS S3-compatible (use MinIO/local S3 for dev), encrypted at rest
+- Transcription: AssemblyAI (placeholder API keys, pluggable)
+- LLM summarization: OpenAI ChatCompletion (placeholder API key)
+- Authentication: NextAuth (Google OAuth + email)
+- QR generation: qrcode npm package
+- Optional: Redis for background job queue (BullMQ). If Redis not available in Replit, use in-process queue for MVP.
+
+Deliverables to generate
+------------------------
+1. Full project skeleton with TypeScript, including package.json and tsconfig.json.
+2. Prisma schema file for DB models and seed script (doctors, sample patient).
+3. NextAuth setup with Google OAuth and session-based role (doctor|patient).
+4. Frontend pages/components:
+   - / : Landing page
+   - /auth/* : sign-in flow
+   - /doctor/dashboard : doctor dashboard (appointments, linked patients, generate QR)
+   - /patient/dashboard : patient dashboard (linked doctors, surveys)
+   - /meeting/[id] : in-app video call UI (Daily.co integration) with Record toggle, Consent modal
+   - /surveys/create : doctor survey builder (simple JSON question editor)
+   - /surveys/:id : patient survey page
+   - Doctor profile editing page (license number, specialty)
+   - QR landing page route: /link/[token] — scans QR and routes to signup/login then link
+5. Backend API routes (Next.js API):
+   - /api/qr/generate (doctor-only) -> returns one-time token + QR image or data URL
+   - /api/link/patient (called after QR flow)
+   - /api/meetings/create -> create Daily meeting, returns meeting token
+   - /api/meetings/:id/startRecording -> request recording start (Daily or client-side fallback)
+   - /api/meetings/:id/uploadRecording -> accepts client upload of audio file, stores to S3, triggers transcription
+   - /api/transcripts/callback -> webhook receiver for AssemblyAI (optional)
+   - /api/ai/notes/generate -> generates structured clinical note given transcript (calls OpenAI)
+   - /api/surveys/* -> create, send, results
+   - /api/patient/* and /api/doctor/* -> link management, lists
+   - /api/audit/log -> append and read immutable audit logs
+6. Background worker script (node) to:
+   - Poll for new uploads, call AssemblyAI for STT, save transcripts, call OpenAI summarizer, attach note.
+   - If Replit doesn’t support worker processes, simulate via cron-like API endpoint /api/worker/run that can be triggered manually.
+7. Prisma models (minimal but complete):
+   - User (id, email, name, role, createdAt, profile)
+   - Doctor (userId FK, specialty, licenseNumber, verified)
+   - Patient (userId FK, demographics, consents)
+   - DoctorPatientLink (id, doctorId, patientId, linkedAt, source)
+   - Meeting (id, doctorId, patientId, provider, meetingUrl, recordingUrl, transcriptUrl, status)
+   - Survey (id, doctorId, questions JSON, createdAt)
+   - SurveyResponse (id, surveyId, patientId, answers JSON)
+   - CallNote (id, meetingId, summary, aiMetadata JSON, createdAt)
+   - AuditLog (id, userId, action, data JSON, createdAt)
+8. Environment variables (template .env.example)
+   - DATABASE_URL=postgres://...
+   - NEXTAUTH_URL=http://localhost:3000
+   - NEXTAUTH_SECRET=...
+   - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+   - DAILY_API_KEY (or TWILIO creds)
+   - AWS_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+   - ASSEMBLYAI_API_KEY
+   - OPENAI_API_KEY
+   - SENTRY_DSN (optional)
+9. README with:
+   - Setup & local dev instructions (migrations, seeding)
+   - How to obtain Daily / AssemblyAI / OpenAI keys and where to place them
+   - How to test recording flow locally (client-side upload fallback)
+   - Export & deletion policy notes
+10. Tests: minimal unit tests for critical APIs (linking, meeting create, ai/generate) using Vitest or Jest.
+
+Functional requirements & UX flows (precise)
+-------------------------------------------
+A. Doctor creates account -> doctor dashboard -> Click "Generate QR" -> API `/api/qr/generate` returns one-time token valid for 24 hours -> QR encodes `https://<APP>/link/<token>`.
+
+B. Patient scans QR -> browser opens `/link/<token>` -> if not signed-in prompt NextAuth Google/email -> After sign-in, call `/api/link/patient` with token -> backend verifies token and creates link record -> redirect patient to `/patient/dashboard` showing doctor details.
+
+C. Scheduling & Call:
+   - Doctor creates appointment in dashboard (date/time).
+   - At appointment time both click meeting link (or doctor starts meeting -> patient receives notification).
+   - Meeting page loads Daily.co meeting iframe and uses server-signed token for auth.
+   - Consent modal appears before enabling microphone and toggling recording. Both must consent to record. Consent stored in DB and logged.
+
+D. Recording & Upload:
+   - Preferred: server-side recording via provider (Daily) and provider posts recording URL to `/api/meetings/:id/recordingCallback`.
+   - Fallback: client-side browser captures audio stream and uploads to `/api/meetings/:id/uploadRecording` immediately when call ends (with user consent).
+   - Backend stores audio to S3 and writes `Meeting.recordingUrl` and `AuditLog`.
+
+E. Transcription & AI Notes:
+   - When recording stored, background worker calls AssemblyAI to transcribe (include speaker diarization param).
+   - Worker fetches transcript, stores `transcriptUrl` and creates a job to call OpenAI summarizer endpoint `/api/ai/notes/generate` with the transcript.
+   - The OpenAI prompt must be strict and structured (see example prompt below). Save output to `CallNote.summary` and attach to `Meeting` and patient record.
+   - Push a notification/email to doctor that notes are ready for review.
+
+F. Doctor-to-doctor link & recorded calls:
+   - Doctor can search other doctors, send link request. Once accepted, they can call each other via same meeting flow. Same recording/transcription/note flow applies.
+   - Audit logs must record doctor-doctor connections and recording consent.
+
+Security & compliance (must implement)
+-------------------------------------
+- TLS enforced
+- JWT session + NextAuth secure cookies
+- Role-based access control (doctor routes require doctor role)
+- Encryption for S3 (server-side) and KMS placeholders
+- Immutable consent logs and audit logs
+- Data retention config variables: RECORDING_RETENTION_DAYS, TRANSCRIPT_RETENTION_DAYS
+- Explicit consent modal and stored consent record before recording/uploading any audio
+- Rate limiting on critical APIs
+
+AI summarization prompt (explicit; include verbatim in code)
+------------------------------------------------------------
+Use the following system/user prompt when calling OpenAI (trim to token limits):
+
+SYSTEM:
+You are a clinical summarization assistant. Output **only** a JSON object with these fields:
+{
+  "chief_complaint": string,
+  "hpi": string,               // concise history of present illness
+  "past_medical_history": string,
+  "medications": string,
+  "allergies": string,
+  "exam_observations": string,
+  "assessment": string,
+  "plan": string,             // tests, prescriptions, follow-up
+  "urgent_flags": [string],   // any urgent issues
+  "follow_up_questions": [string]  // 3 short follow-up questions
+}
+
+USER:
+Below is a cleaned transcript segment with speaker tags (DOCTOR:, PATIENT:). Extract the structured note requested above. Do not hallucinate medications or tests: if something is uncertain, mark it as "uncertain" in the relevant field. Keep all fields brief and factual. Transcript:
+```TRANSCRIPT_START
+<insert transcript here>
+TRANSCRIPT_END

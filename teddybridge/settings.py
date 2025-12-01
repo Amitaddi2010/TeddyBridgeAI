@@ -100,17 +100,24 @@ REST_FRAMEWORK = {
     ],
 }
 
+# CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = True
-
 CORS_ALLOW_CREDENTIALS = True
 
+# Session Cookie Configuration
+# For production (HTTPS), use 'None' and Secure=True for cross-origin cookies
+# For development (HTTP), use 'Lax' and Secure=False
+IS_PRODUCTION = not DEBUG or os.getenv('IS_PRODUCTION', 'False') == 'True'
+
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SAMESITE = 'None' if IS_PRODUCTION else 'Lax'
+SESSION_COOKIE_SECURE = IS_PRODUCTION  # True for HTTPS, False for HTTP
 SESSION_COOKIE_DOMAIN = None
+
+# CSRF Cookie Configuration
 CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_SAMESITE = 'None' if IS_PRODUCTION else 'Lax'
+CSRF_COOKIE_SECURE = IS_PRODUCTION  # True for HTTPS, False for HTTP
 
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 ASSEMBLYAI_API_KEY = os.getenv('ASSEMBLYAI_API_KEY')

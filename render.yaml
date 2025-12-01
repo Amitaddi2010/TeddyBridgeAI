@@ -2,7 +2,8 @@ services:
   - type: web
     name: teddybridge-api
     env: python
-    buildCommand: pip install -r requirements.txt
+    pythonVersion: 3.11.9
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: gunicorn teddybridge.wsgi:application
     envVars:
       - key: DJANGO_SECRET_KEY

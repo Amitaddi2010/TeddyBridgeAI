@@ -45,7 +45,7 @@
    Region: Choose closest to you
    Branch: main
    Root Directory: (leave empty)
-   Build Command: pip install -r requirements.txt
+   Build Command: pip install --upgrade pip && pip install -r requirements.txt
    Start Command: gunicorn teddybridge.wsgi:application
    Plan: Free
    ```
@@ -69,7 +69,7 @@
    (Replace with your actual Vercel URL from Part 1)
    ```
 
-5. **Deploy**:
+6. **Deploy**:
    - Click "Create Web Service"
    - Wait 5-10 minutes for first deployment
    - ✅ Copy your URL (e.g., `teddybridge-api.onrender.com`)
@@ -77,6 +77,8 @@
 ---
 
 ### Part 3: Connect Frontend to Backend (3 minutes)
+
+**Note**: If you see build errors about Python packages, make sure Python Version is set to 3.11.9 in Render settings!
 
 1. **Go back to Vercel**:
    - Open your project

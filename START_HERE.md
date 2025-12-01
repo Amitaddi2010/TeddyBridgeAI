@@ -1,5 +1,7 @@
 # 🚀 START HERE: Deploy TeddyBridge AI for FREE
 
+> **📝 Note**: For local development setup with `.env` file, see [ENV_SETUP.md](./ENV_SETUP.md)
+
 ## ⚡ Quick Start (15 Minutes)
 
 ### Part 1: Deploy Frontend (5 minutes)

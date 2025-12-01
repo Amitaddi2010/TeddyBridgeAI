@@ -48,7 +48,7 @@
    Branch: main
    Root Directory: (leave empty)
    Build Command: pip install --upgrade pip && pip install -r requirements.txt
-   Start Command: gunicorn teddybridge.wsgi:application
+   Start Command: python manage.py migrate --noinput && (python manage.py init_superuser || true) && gunicorn teddybridge.wsgi:application --bind 0.0.0.0:$PORT
    Plan: Free
    ```
 
@@ -116,9 +116,14 @@
 
 ### Part 4: Setup Database (FREE - No Shell Needed!)
 
-**Option 1: Automatic Setup (Recommended - FREE)**
+**Migrations run automatically on deployment!** ✅
 
-1. **Add Superuser Environment Variables in Render**:
+The start command includes `python manage.py migrate --noinput` which will:
+- Create all database tables automatically
+- Run all migrations
+- No manual intervention needed
+
+**Add Superuser Environment Variables in Render** (Optional but Recommended):
    - Go to your Render service → Settings → Environment
    - Add these variables:
    ```

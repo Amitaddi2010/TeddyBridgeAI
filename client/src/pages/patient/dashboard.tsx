@@ -13,8 +13,14 @@ import {
   Clock,
   Video,
   CheckCircle,
+  Bot,
+  Sparkles,
+  Search,
+  MessageCircle,
+  ArrowRightCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { TeddyIcon } from "@/components/teddy-icon";
 
 interface DashboardStats {
   totalDoctors: number;
@@ -149,6 +155,74 @@ export default function PatientDashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Teddy Talk AI Assistant Card */}
+      <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/10 via-chart-3/10 to-primary/5 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl"></div>
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-chart-3/10 rounded-full blur-2xl"></div>
+        <CardHeader className="relative z-10">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="secondary" className="bg-primary/20 border-primary/30">
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  AI-Powered
+                </Badge>
+              </div>
+              <CardTitle className="text-2xl mb-2">
+                Talk to <span className="bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent">Teddy</span>
+              </CardTitle>
+              <CardDescription className="text-base">
+                Your AI assistant that helps you connect with specialized doctors instantly. Describe your medical needs and get matched with the right specialist.
+              </CardDescription>
+            </div>
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary/20 to-chart-3/20 flex items-center justify-center shrink-0">
+              <Bot className="w-8 h-8 text-primary" />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="relative z-10 space-y-4">
+          <div className="grid md:grid-cols-3 gap-3">
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-card/50 border border-primary/10">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <Search className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Smart Matching</p>
+                <p className="text-xs text-muted-foreground">AI finds the right doctor</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-card/50 border border-chart-3/10">
+              <div className="w-8 h-8 rounded-lg bg-chart-3/10 flex items-center justify-center shrink-0">
+                <MessageCircle className="w-4 h-4 text-chart-3" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">24/7 Available</p>
+                <p className="text-xs text-muted-foreground">Get help anytime</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-card/50 border border-primary/10">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <ArrowRightCircle className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Quick Connect</p>
+                <p className="text-xs text-muted-foreground">Instant access</p>
+              </div>
+            </div>
+          </div>
+          <Button 
+            className="w-full gap-2 bg-gradient-to-r from-primary to-chart-3 hover:from-primary/90 hover:to-chart-3/90"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("open-teddy"));
+            }}
+          >
+            <TeddyIcon className="w-4 h-4" size={16} />
+            Start Talking to Teddy
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </CardContent>
+      </Card>
 
       <div className="grid lg:grid-cols-2 gap-6">
         <Card>

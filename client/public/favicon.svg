@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Teddy Bear Icon -->
+  <defs>
+    <linearGradient id="bearGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B4513;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#654321;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Left Ear -->
+  <circle cx="30" cy="25" r="12" fill="url(#bearGradient)"/>
+  <circle cx="30" cy="25" r="7" fill="#D2691E"/>
+  
+  <!-- Right Ear -->
+  <circle cx="70" cy="25" r="12" fill="url(#bearGradient)"/>
+  <circle cx="70" cy="25" r="7" fill="#D2691E"/>
+  
+  <!-- Head -->
+  <circle cx="50" cy="45" r="28" fill="url(#bearGradient)"/>
+  
+  <!-- Snout -->
+  <ellipse cx="50" cy="52" rx="16" ry="13" fill="#D2691E"/>
+  
+  <!-- Nose -->
+  <ellipse cx="50" cy="50" rx="6" ry="5" fill="#2C1810"/>
+  
+  <!-- Eyes -->
+  <circle cx="40" cy="40" r="4" fill="#2C1810"/>
+  <circle cx="60" cy="40" r="4" fill="#2C1810"/>
+  <circle cx="41" cy="39" r="1.5" fill="white"/>
+  <circle cx="61" cy="39" r="1.5" fill="white"/>
+  
+  <!-- Smile -->
+  <path d="M 44 54 Q 50 58 56 54" stroke="#2C1810" stroke-width="2" fill="none" stroke-linecap="round"/>
+  
+  <!-- Body -->
+  <ellipse cx="50" cy="80" rx="22" ry="18" fill="url(#bearGradient)"/>
+  
+  <!-- Left Arm -->
+  <ellipse cx="30" cy="75" rx="8" ry="14" fill="url(#bearGradient)"/>
+  
+  <!-- Right Arm -->
+  <ellipse cx="70" cy="75" rx="8" ry="14" fill="url(#bearGradient)"/>
+  
+  <!-- Belly -->
+  <ellipse cx="50" cy="82" rx="14" ry="12" fill="#D2691E"/>
+</svg>

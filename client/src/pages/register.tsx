@@ -34,7 +34,7 @@ export default function Register() {
       await register(data.email, data.password, data.name, data.role);
       toast({
         title: "Account created!",
-        description: "Welcome to TeleClinic. Your account has been created successfully.",
+        description: "Welcome to TeddyBridge. Your account has been created successfully.",
       });
     } catch (error) {
       toast({
@@ -55,7 +55,7 @@ export default function Register() {
             <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
               <Stethoscope className="w-7 h-7 text-primary-foreground" />
             </div>
-            <span className="text-2xl font-bold">TeleClinic</span>
+            <span className="text-2xl font-bold">TeddyBridge</span>
           </div>
         </Link>
 
@@ -63,7 +63,7 @@ export default function Register() {
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Create Account</CardTitle>
             <CardDescription>
-              Join TeleClinic to start your telemedicine journey
+              Your PROMS AI assistant
             </CardDescription>
           </CardHeader>
           <CardContent>

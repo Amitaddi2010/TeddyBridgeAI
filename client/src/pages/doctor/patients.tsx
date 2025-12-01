@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -23,8 +24,12 @@ import {
   Phone,
   Mail,
   Calendar,
+  MessageCircle,
+  Send,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 
 interface Patient {
   id: string;
@@ -36,6 +41,119 @@ interface Patient {
   dateOfBirth?: string;
   linkedAt: string;
   lastVisit?: string;
+  unreadMessageCount?: number;
+}
+
+function PatientChatDialog({ patientId, patientName }: { patientId: string; patientName: string }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const loadMessages = async () => {
+    try {
+      const res = await fetch(`/api/peers/chat/${patientId}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data);
+      }
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/peers/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ receiverId: patientId, message: newMessage }),
+      });
+      
+      if (res.ok) {
+        setNewMessage("");
+        await loadMessages();
+      } else {
+        const error = await res.json();
+        toast({
+          title: "Failed to send message",
+          description: error.error || "Please try again",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Failed to send message",
+        description: "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMessages();
+    const interval = setInterval(() => {
+      loadMessages();
+    }, 3000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
+
+  return (
+    <div className="space-y-4">
+      <div className="h-96 overflow-y-auto space-y-3 p-4 border rounded-lg bg-muted/30">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            <div className="text-center">
+              <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No messages yet. Start the conversation!</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.senderId === user?.id ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-xs p-3 rounded-lg ${
+                msg.senderId === user?.id 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-card border-2"
+              }`}>
+                <p className="text-sm">{msg.message}</p>
+                <p className={`text-xs mt-1 ${
+                  msg.senderId === user?.id ? "opacity-70" : "text-muted-foreground"
+                }`}>
+                  {new Date(msg.createdAt).toLocaleTimeString()}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Type a message..."
+          onKeyPress={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
+          }}
+          disabled={isLoading}
+        />
+        <Button onClick={sendMessage} disabled={isLoading || !newMessage.trim()}>
+          <Send className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export default function DoctorPatients() {
@@ -43,6 +161,7 @@ export default function DoctorPatients() {
 
   const { data: patients, isLoading } = useQuery<Patient[]>({
     queryKey: ["/api/doctor/patients"],
+    refetchInterval: 10000, // Refetch every 10 seconds for unread counts
   });
 
   const getInitials = (name: string) => {
@@ -186,6 +305,40 @@ export default function DoctorPatients() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1 relative"
+                                data-testid={`button-message-${patient.id}`}
+                              >
+                                <MessageCircle className="w-3 h-3 flex-shrink-0" />
+                                <span>Message</span>
+                                {(patient.unreadMessageCount ?? 0) > 0 && (
+                                  <Badge
+                                    variant="destructive"
+                                    className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center px-1 text-xs font-semibold"
+                                  >
+                                    {(patient.unreadMessageCount ?? 0) > 9 ? "9+" : patient.unreadMessageCount}
+                                  </Badge>
+                                )}
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="flex items-center gap-2 flex-wrap">
+                                <span>Chat with {patient.name}</span>
+                                {(patient.unreadMessageCount ?? 0) > 0 && (
+                                  <Badge variant="destructive" className="text-xs font-semibold">
+                                    {(patient.unreadMessageCount ?? 0)} new message{(patient.unreadMessageCount ?? 0) > 1 ? 's' : ''}
+                                  </Badge>
+                                )}
+                              </DialogTitle>
+                            </DialogHeader>
+                            <PatientChatDialog patientId={patient.userId || patient.id} patientName={patient.name} />
+                            </DialogContent>
+                          </Dialog>
                           <Link href={`/doctor/patients/${patient.id}/meeting`}>
                             <Button
                               variant="outline"

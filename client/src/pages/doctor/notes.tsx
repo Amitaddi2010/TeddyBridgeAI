@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +100,31 @@ export default function DoctorNotes() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  // Clean HTML tags and convert to markdown-friendly format
+  const cleanNoteText = (text: string | undefined): string => {
+    if (!text) return '';
+    
+    return text
+      // Convert <br> and <br/> to newlines
+      .replace(/<br\s*\/?>/gi, '\n')
+      // Convert HTML entities
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      // Convert bullet points with <br> prefix to markdown lists
+      .replace(/<br>\s*•\s*/g, '\n- ')
+      .replace(/•\s*/g, '- ')
+      // Remove other HTML tags (but keep content)
+      .replace(/<[^>]+>/g, '')
+      // Clean up multiple newlines
+      .replace(/\n{3,}/g, '\n\n')
+      // Trim whitespace
+      .trim();
   };
 
   const noteFields = [
@@ -210,15 +238,91 @@ export default function DoctorNotes() {
                       {noteFields.map(({ key, label }) => {
                         const value = note[key];
                         if (!value) return null;
+                        
+                        // Clean HTML tags from the text
+                        const cleanedValue = cleanNoteText(value);
+                        
                         return (
                           <AccordionItem key={key} value={key}>
                             <AccordionTrigger className="text-sm font-medium">
                               {label}
                             </AccordionTrigger>
                             <AccordionContent>
-                              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                                {value}
-                              </p>
+                              <div className="prose prose-sm max-w-none text-sm text-muted-foreground">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  rehypePlugins={[rehypeRaw]}
+                                  components={{
+                                    table: ({ children }) => (
+                                      <div className="overflow-x-auto my-4">
+                                        <table className="min-w-full divide-y divide-border border border-border rounded-lg">
+                                          {children}
+                                        </table>
+                                      </div>
+                                    ),
+                                    thead: ({ children }) => (
+                                      <thead className="bg-muted">{children}</thead>
+                                    ),
+                                    tbody: ({ children }) => (
+                                      <tbody className="divide-y divide-border bg-card">{children}</tbody>
+                                    ),
+                                    tr: ({ children }) => (
+                                      <tr className="hover:bg-muted/50 transition-colors">{children}</tr>
+                                    ),
+                                    th: ({ children }) => (
+                                      <th className="px-4 py-3 text-left text-xs font-semibold text-foreground uppercase tracking-wider border-b border-border">
+                                        {children}
+                                      </th>
+                                    ),
+                                    td: ({ children }) => (
+                                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-normal">
+                                        {children}
+                                      </td>
+                                    ),
+                                    h1: ({ children }) => (
+                                      <h1 className="text-xl font-bold mt-4 mb-2 text-foreground">{children}</h1>
+                                    ),
+                                    h2: ({ children }) => (
+                                      <h2 className="text-lg font-semibold mt-4 mb-2 text-foreground">{children}</h2>
+                                    ),
+                                    h3: ({ children }) => (
+                                      <h3 className="text-base font-semibold mt-3 mb-2 text-foreground">{children}</h3>
+                                    ),
+                                    p: ({ children }) => (
+                                      <p className="mb-3 leading-relaxed">{children}</p>
+                                    ),
+                                    ul: ({ children }) => (
+                                      <ul className="list-disc list-inside mb-3 space-y-1 ml-4">{children}</ul>
+                                    ),
+                                    ol: ({ children }) => (
+                                      <ol className="list-decimal list-inside mb-3 space-y-1 ml-4">{children}</ol>
+                                    ),
+                                    li: ({ children }) => (
+                                      <li className="leading-relaxed">{children}</li>
+                                    ),
+                                    strong: ({ children }) => (
+                                      <strong className="font-semibold text-foreground">{children}</strong>
+                                    ),
+                                    em: ({ children }) => (
+                                      <em className="italic">{children}</em>
+                                    ),
+                                    code: ({ children }) => (
+                                      <code className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono">
+                                        {children}
+                                      </code>
+                                    ),
+                                    blockquote: ({ children }) => (
+                                      <blockquote className="border-l-4 border-primary pl-4 italic my-3">
+                                        {children}
+                                      </blockquote>
+                                    ),
+                                    // Handle HTML breaks and other inline elements
+                                    br: () => <br />,
+                                  }}
+                                >
+                                  {cleanedValue}
+                                </ReactMarkdown>
+                              </div>
                             </AccordionContent>
                           </AccordionItem>
                         );

@@ -52,7 +52,7 @@ export default function Login() {
             <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
               <Stethoscope className="w-7 h-7 text-primary-foreground" />
             </div>
-            <span className="text-2xl font-bold">TeleClinic</span>
+            <span className="text-2xl font-bold">TeddyBridge</span>
           </div>
         </Link>
 
@@ -60,7 +60,7 @@ export default function Login() {
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Welcome Back</CardTitle>
             <CardDescription>
-              Sign in to access your telemedicine dashboard
+              Your PROMS AI assistant
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import * as TwilioVideo from "twilio-video";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,8 @@ interface MeetingInfo {
   hasConsented: boolean;
   otherPartyConsented: boolean;
   isRecording: boolean;
+  twilioToken?: string;
+  roomName?: string;
 }
 
 export default function Meeting() {
@@ -75,6 +78,7 @@ export default function Meeting() {
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const consentScrollRef = useRef<HTMLDivElement>(null);
+  const roomRef = useRef<any>(null);
 
   const { data: meetingInfo, isLoading, error } = useQuery<MeetingInfo>({
     queryKey: ["/api/meetings", meetingId],
@@ -210,6 +214,69 @@ export default function Meeting() {
     }
   }, [meetingInfo, isJoined]);
 
+  useEffect(() => {
+    if (!isJoined || !meetingInfo?.twilioToken || !meetingInfo?.roomName) return;
+    if (roomRef.current) return;
+    
+    const initCall = async () => {
+      try {
+        const room = await TwilioVideo.connect(meetingInfo.twilioToken, {
+          name: meetingInfo.roomName,
+          audio: true,
+          video: false,
+        });
+        
+        roomRef.current = room;
+        
+        room.participants.forEach(participant => {
+          participant.tracks.forEach(publication => {
+            if (publication.track && publication.track.kind === 'audio') {
+              const audioElement = publication.track.attach();
+              document.body.appendChild(audioElement);
+            }
+          });
+        });
+        
+        room.on('participantConnected', participant => {
+          participant.tracks.forEach(publication => {
+            if (publication.track && publication.track.kind === 'audio') {
+              const audioElement = publication.track.attach();
+              document.body.appendChild(audioElement);
+            }
+          });
+          
+          participant.on('trackSubscribed', track => {
+            if (track.kind === 'audio') {
+              const audioElement = track.attach();
+              document.body.appendChild(audioElement);
+            }
+          });
+        });
+        
+        toast({
+          title: "Connected",
+          description: "Audio call connected. Video requires HTTPS.",
+        });
+      } catch (err: any) {
+        console.error('Failed to join call:', err);
+        toast({
+          title: "Connection Failed",
+          description: err.message || "Could not connect.",
+          variant: "destructive",
+        });
+      }
+    };
+    
+    initCall();
+    
+    return () => {
+      if (roomRef.current) {
+        roomRef.current.disconnect();
+        roomRef.current = null;
+      }
+    };
+  }, [isJoined, meetingInfo, toast]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -319,26 +386,13 @@ export default function Meeting() {
               </AvatarFallback>
             </Avatar>
             <p className="text-xl font-medium">{getParticipantName()}</p>
-            <p className="text-white/60 mt-1">
-              {isVideoOn ? "Video call in progress" : "Camera is off"}
-            </p>
-          </div>
-        </div>
-
-        <div className="absolute top-4 right-4">
-          <div className="w-48 h-36 rounded-lg bg-muted overflow-hidden border-2 border-primary">
-            <div className="h-full flex items-center justify-center">
-              <Avatar className="w-16 h-16">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xl">
-                  {getInitials(user?.name || "")}
-                </AvatarFallback>
-              </Avatar>
-            </div>
+            <p className="text-white/60 mt-2">Audio call in progress</p>
+            <p className="text-sm text-white/40 mt-1">Video requires HTTPS</p>
           </div>
         </div>
 
         {isRecording && (
-          <div className="absolute top-4 left-4">
+          <div className="absolute top-4 left-4 z-10">
             <Badge variant="destructive" className="gap-2 px-3 py-1.5">
               <Circle className="w-3 h-3 fill-current animate-recording-pulse" />
               RECORDING
@@ -347,13 +401,24 @@ export default function Meeting() {
         )}
       </div>
 
-      <div className="bg-black/80 backdrop-blur-lg border-t border-white/10 p-4">
+      <div className="bg-black/80 backdrop-blur-lg border-t border-white/10 p-4 relative z-10">
         <div className="max-w-lg mx-auto flex items-center justify-center gap-4">
           <Button
             variant={isMuted ? "destructive" : "secondary"}
             size="icon"
             className="w-14 h-14 rounded-full"
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={() => {
+              setIsMuted(!isMuted);
+              if (roomRef.current) {
+                roomRef.current.localParticipant.audioTracks.forEach(publication => {
+                  if (isMuted) {
+                    publication.track.enable();
+                  } else {
+                    publication.track.disable();
+                  }
+                });
+              }
+            }}
             data-testid="button-toggle-mic"
           >
             {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
@@ -363,7 +428,12 @@ export default function Meeting() {
             variant={isVideoOn ? "secondary" : "destructive"}
             size="icon"
             className="w-14 h-14 rounded-full"
-            onClick={() => setIsVideoOn(!isVideoOn)}
+            onClick={() => {
+              toast({
+                title: "Video Not Available",
+                description: "Video requires HTTPS. Use ngrok or localhost.",
+              });
+            }}
             data-testid="button-toggle-video"
           >
             {isVideoOn ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}

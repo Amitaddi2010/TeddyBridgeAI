@@ -1,0 +1,444 @@
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.utils import timezone
+from .models import User, Doctor, Patient, QRToken, DoctorPatientLink, Notification
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def register(request):
+    email = request.data.get('email')
+    password = request.data.get('password')
+    name = request.data.get('name')
+    role = request.data.get('role')
+    
+    if User.objects.filter(email=email).exists():
+        return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    user = User.objects.create_user(email=email, password=password, name=name, role=role)
+    
+    if role == 'doctor':
+        Doctor.objects.create(user=user)
+    else:
+        Patient.objects.create(user=user)
+    
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    request.session.save()
+    
+    return Response({
+        'success': True,
+        'user': {
+            'id': str(user.id),
+            'email': user.email,
+            'name': user.name,
+            'role': user.role,
+        }
+    })
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def user_login(request):
+    email = request.data.get('email')
+    password = request.data.get('password')
+    
+    user = authenticate(request, email=email, password=password)
+    if user:
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        request.session.save()
+        return Response({
+            'success': True,
+            'user': {
+                'id': str(user.id),
+                'email': user.email,
+                'name': user.name,
+                'role': user.role,
+            }
+        })
+    return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_logout(request):
+    logout(request)
+    return Response({'success': True})
+
+@api_view(['GET'])
+def get_current_user(request):
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        user = request.user
+        
+        # Basic user data - ensure all fields are safely accessed
+        try:
+            data = {
+                'id': str(user.id),
+                'email': user.email or '',
+                'name': getattr(user, 'name', '') or '',
+                'role': getattr(user, 'role', '') or '',
+                'avatarUrl': getattr(user, 'avatar_url', None) or None,
+            }
+        except Exception as e:
+            logger.error(f"Error accessing basic user fields for user {user.id}: {str(e)}")
+            return Response({
+                'error': 'Error accessing user data',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # Safely get doctor or patient profile
+        # OneToOneField raises DoesNotExist when accessed and doesn't exist
+        if user.role == 'doctor':
+            try:
+                doctor = user.doctor_profile
+                data['doctor'] = {
+                    'id': str(doctor.id),
+                    'specialty': getattr(doctor, 'specialty', None) or None,
+                    'licenseNumber': getattr(doctor, 'license_number', None) or None,
+                    'bio': getattr(doctor, 'bio', None) or None,
+                }
+            except Doctor.DoesNotExist:
+                # Create doctor profile if it doesn't exist
+                try:
+                    doctor = Doctor.objects.create(user=user)
+                    data['doctor'] = {
+                        'id': str(doctor.id),
+                        'specialty': None,
+                        'licenseNumber': None,
+                        'bio': None,
+                    }
+                except Exception as create_error:
+                    # If creation fails, log and continue without profile data
+                    logger.error(f"Failed to create doctor profile for user {user.id}: {str(create_error)}")
+                    # Return data without doctor profile
+            except Exception as e:
+                # Log other errors but don't fail the request
+                logger.warning(f"Error fetching doctor profile for user {user.id}: {str(e)}")
+                # Return data without doctor profile
+        elif user.role == 'patient':
+            try:
+                patient = user.patient_profile
+                # Safely get medical_conditions - handle both list and None
+                medical_conditions = getattr(patient, 'medical_conditions', None)
+                if medical_conditions is None:
+                    medical_conditions = []
+                elif not isinstance(medical_conditions, list):
+                    medical_conditions = list(medical_conditions) if medical_conditions else []
+                
+                data['patient'] = {
+                    'id': str(patient.id),
+                    'phone': getattr(patient, 'phone', None) or None,
+                    'address': getattr(patient, 'address', None) or None,
+                    'medicalConditions': medical_conditions,
+                }
+            except Patient.DoesNotExist:
+                # Create patient profile if it doesn't exist
+                try:
+                    patient = Patient.objects.create(user=user)
+                    data['patient'] = {
+                        'id': str(patient.id),
+                        'phone': None,
+                        'address': None,
+                        'medicalConditions': [],
+                    }
+                except Exception as create_error:
+                    # If creation fails, log and continue without profile data
+                    logger.error(f"Failed to create patient profile for user {user.id}: {str(create_error)}")
+                    # Return data without patient profile
+            except Exception as e:
+                # Log other errors but don't fail the request
+                logger.warning(f"Error fetching patient profile for user {user.id}: {str(e)}")
+                # Return data without patient profile
+        
+        return Response(data)
+    except Exception as e:
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        error_msg = str(e)
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in get_current_user for user {getattr(request.user, 'id', 'unknown')}: {error_msg}\n{error_trace}")
+        
+        # Return minimal user data even on error to prevent frontend crashes
+        try:
+            user = request.user
+            minimal_data = {
+                'id': str(user.id),
+                'email': getattr(user, 'email', '') or '',
+                'name': getattr(user, 'name', '') or '',
+                'role': getattr(user, 'role', '') or '',
+                'avatarUrl': None,
+                'error': 'Profile data unavailable'
+            }
+            return Response(minimal_data)
+        except Exception as fallback_error:
+            logger.error(f"Failed to return minimal user data: {str(fallback_error)}")
+            return Response({
+                'error': 'Failed to get user data',
+                'details': error_msg
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def verify_qr_token(request, token):
+    try:
+        qr_token = QRToken.objects.select_related('doctor__user').get(token=token)
+        
+        if qr_token.used or qr_token.expires_at < timezone.now():
+            return Response({
+                'valid': False,
+                'expired': qr_token.expires_at < timezone.now(),
+                'used': qr_token.used
+            })
+        
+        return Response({
+            'valid': True,
+            'expired': False,
+            'used': False,
+            'doctor': {
+                'id': str(qr_token.doctor.id),
+                'name': qr_token.doctor.user.name,
+                'specialty': qr_token.doctor.specialty,
+                'avatar': qr_token.doctor.user.avatar_url,
+            }
+        })
+    except QRToken.DoesNotExist:
+        return Response({'valid': False, 'expired': False, 'used': False})
+
+@api_view(['POST'])
+def link_patient(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    if request.user.role != 'patient':
+        return Response({'error': 'Only patients can link'}, status=status.HTTP_403_FORBIDDEN)
+    
+    token = request.data.get('token')
+    try:
+        qr_token = QRToken.objects.get(token=token)
+        
+        if qr_token.used or qr_token.expires_at < timezone.now():
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        patient = request.user.patient_profile
+        
+        if DoctorPatientLink.objects.filter(doctor=qr_token.doctor, patient=patient).exists():
+            return Response({'error': 'Already linked'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        DoctorPatientLink.objects.create(doctor=qr_token.doctor, patient=patient, source='qr')
+        qr_token.used = True
+        qr_token.save()
+        
+        return Response({'success': True})
+    except QRToken.DoesNotExist:
+        return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def upload_avatar(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    if 'avatar' not in request.FILES:
+        return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    avatar_file = request.FILES['avatar']
+    allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+    if avatar_file.content_type not in allowed_types:
+        return Response({'error': 'Invalid file type'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if avatar_file.size > 5 * 1024 * 1024:
+        return Response({'error': 'File too large'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    import os
+    from django.conf import settings
+    
+    avatars_dir = os.path.join(settings.MEDIA_ROOT, 'avatars')
+    os.makedirs(avatars_dir, exist_ok=True)
+    
+    ext = os.path.splitext(avatar_file.name)[1]
+    filename = f"{request.user.id}{ext}"
+    filepath = os.path.join(avatars_dir, filename)
+    
+    if request.user.avatar_url:
+        old_path = request.user.avatar_url.replace(settings.MEDIA_URL, '').replace('http://localhost:5173/', '')
+        old_file = os.path.join(settings.MEDIA_ROOT, old_path)
+        if os.path.exists(old_file):
+            os.remove(old_file)
+    
+    with open(filepath, 'wb+') as destination:
+        for chunk in avatar_file.chunks():
+            destination.write(chunk)
+    
+    avatar_url = f"http://localhost:8000{settings.MEDIA_URL}avatars/{filename}"
+    request.user.avatar_url = avatar_url
+    request.user.save()
+    
+    return Response({'success': True, 'avatarUrl': avatar_url})
+
+@api_view(['PATCH'])
+def update_profile(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    user = request.user
+    
+    if 'name' in request.data:
+        user.name = request.data['name']
+    if 'avatar_url' in request.data:
+        user.avatar_url = request.data['avatar_url']
+    user.save()
+    
+    try:
+        if user.role == 'doctor':
+            doctor = user.doctor_profile
+            if 'specialty' in request.data:
+                doctor.specialty = request.data['specialty']
+            if 'licenseNumber' in request.data:
+                doctor.license_number = request.data['licenseNumber']
+            if 'bio' in request.data:
+                doctor.bio = request.data['bio']
+            doctor.save()
+        elif user.role == 'patient':
+            patient = user.patient_profile
+            if 'phone' in request.data:
+                patient.phone = request.data['phone']
+            if 'address' in request.data:
+                patient.address = request.data['address']
+            if 'medicalConditions' in request.data:
+                patient.medical_conditions = request.data['medicalConditions']
+            patient.save()
+    except Exception as e:
+        pass
+    
+    return Response({'success': True})
+
+@api_view(['GET', 'PATCH'])
+def notifications_settings(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    user = request.user
+    
+    if request.method == 'GET':
+        return Response({
+            'emailAppointments': user.email_appointments,
+            'emailNotes': user.email_notes,
+            'emailSurveys': user.email_surveys,
+        })
+    
+    if 'emailAppointments' in request.data:
+        user.email_appointments = request.data['emailAppointments']
+    if 'emailNotes' in request.data:
+        user.email_notes = request.data['emailNotes']
+    if 'emailSurveys' in request.data:
+        user.email_surveys = request.data['emailSurveys']
+    user.save()
+    
+    return Response({'success': True})
+
+@api_view(['POST'])
+def change_password(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    current_password = request.data.get('currentPassword')
+    new_password = request.data.get('newPassword')
+    
+    if not request.user.check_password(current_password):
+        return Response({'error': 'Current password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    request.user.set_password(new_password)
+    request.user.save()
+    
+    return Response({'success': True})
+
+@api_view(['DELETE'])
+def delete_account(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    password = request.data.get('password')
+    
+    if not request.user.check_password(password):
+        return Response({'error': 'Password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    request.user.delete()
+    logout(request)
+    
+    return Response({'success': True})
+
+@api_view(['GET'])
+def get_notifications(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    notifications = Notification.objects.filter(user=request.user)[:20]
+    unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+    
+    # Fix old notification links that point to /peer-network incorrectly
+    # For "New Message" notifications, set correct link based on user role
+    result_notifications = []
+    for n in notifications:
+        notification_link = n.link
+        
+        # Fix old "New Message" notifications that incorrectly link to /peer-network
+        # This handles notifications created before the fix was implemented
+        if (n.type == 'general' and 
+            n.title == 'New Message' and 
+            notification_link == '/peer-network' and
+            request.user.role in ['patient', 'doctor']):
+            # Determine correct link based on user's role
+            if request.user.role == 'patient':
+                notification_link = '/patient/doctors'
+            elif request.user.role == 'doctor':
+                notification_link = '/doctor/patients'
+            
+            # Update the database record to fix it permanently
+            if notification_link != n.link:
+                n.link = notification_link
+                n.save(update_fields=['link'])
+        
+        result_notifications.append({
+            'id': str(n.id),
+            'type': n.type,
+            'title': n.title,
+            'message': n.message,
+            'link': notification_link,
+            'isRead': n.is_read,
+            'createdAt': n.created_at.isoformat(),
+        })
+    
+    return Response({
+        'notifications': result_notifications,
+        'unreadCount': unread_count,
+    })
+
+@api_view(['POST'])
+def mark_notification_read(request, notification_id):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+        notification.is_read = True
+        notification.save()
+        return Response({'success': True})
+    except Notification.DoesNotExist:
+        return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+def mark_all_notifications_read(request):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    return Response({'success': True})

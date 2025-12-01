@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Calendar,
   ClipboardList,
@@ -10,7 +11,10 @@ import {
   Users,
   Video,
   FileText,
+  Activity,
+  MessageCircle,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import {
   Sidebar,
   SidebarContent,
@@ -35,6 +39,8 @@ const doctorMenuItems = [
   { title: "Meetings", url: "/doctor/meetings", icon: Video },
   { title: "Call Notes", url: "/doctor/notes", icon: FileText },
   { title: "Surveys", url: "/doctor/surveys", icon: ClipboardList },
+  { title: "PROMS Monitor", url: "/doctor/monitor", icon: Activity },
+  { title: "Peer Network", url: "/peer-network", icon: MessageCircle },
   { title: "Generate QR", url: "/doctor/qr", icon: QrCode },
 ];
 
@@ -43,6 +49,7 @@ const patientMenuItems = [
   { title: "My Doctors", url: "/patient/doctors", icon: Stethoscope },
   { title: "Appointments", url: "/patient/appointments", icon: Calendar },
   { title: "Surveys", url: "/patient/surveys", icon: ClipboardList },
+  { title: "Peer Network", url: "/peer-network", icon: MessageCircle },
 ];
 
 export function AppSidebar() {
@@ -50,6 +57,15 @@ export function AppSidebar() {
   const { user, logout } = useAuth();
   
   const menuItems = user?.role === "doctor" ? doctorMenuItems : patientMenuItems;
+
+  // Get unread message count
+  const { data: unreadData } = useQuery<{ unreadCount: number }>({
+    queryKey: ["/api/peers/chat/unread-count"],
+    refetchInterval: 10000, // Refetch every 10 seconds
+    enabled: !!user, // Only fetch if user is logged in
+  });
+
+  const unreadMessageCount = unreadData?.unreadCount || 0;
 
   const getInitials = (name: string) => {
     return name
@@ -62,15 +78,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="p-4">
+      <SidebarHeader className="p-6 border-b">
         <Link href="/">
-          <div className="flex items-center gap-3 cursor-pointer" data-testid="link-logo">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+          <div className="flex items-center gap-3 cursor-pointer group" data-testid="link-logo">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
               <Stethoscope className="w-6 h-6 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">TeleClinic</h1>
-              <p className="text-xs text-muted-foreground">Telemedicine Platform</p>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+                TeddyBridge
+              </h1>
+              <p className="text-xs text-muted-foreground font-medium">Your PROMS AI assistant</p>
             </div>
           </div>
         </Link>
@@ -89,10 +107,19 @@ export function AppSidebar() {
                     asChild
                     isActive={location === item.url}
                     tooltip={item.title}
+                    className="relative"
                   >
                     <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
                       <item.icon className="w-4 h-4" />
                       <span>{item.title}</span>
+                      {item.title === "Peer Network" && unreadMessageCount > 0 && (
+                        <Badge
+                          variant="destructive"
+                          className="absolute right-2 h-5 min-w-5 flex items-center justify-center px-1 text-xs"
+                        >
+                          {unreadMessageCount > 9 ? "9+" : unreadMessageCount}
+                        </Badge>
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -124,19 +151,19 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       
-      <SidebarFooter className="p-4">
-        <div className="flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent">
-          <Avatar className="w-10 h-10">
+      <SidebarFooter className="p-4 border-t">
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-sidebar-accent border-2 border-transparent hover:border-primary/20 transition-all duration-200">
+          <Avatar className="w-11 h-11 border-2 border-background shadow-sm">
             <AvatarImage src={user?.avatarUrl || undefined} alt={user?.name} />
-            <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+            <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-semibold text-sm">
               {user?.name ? getInitials(user.name) : "U"}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate" data-testid="text-user-name">
+            <p className="text-sm font-semibold truncate" data-testid="text-user-name">
               {user?.name}
             </p>
-            <p className="text-xs text-muted-foreground capitalize" data-testid="text-user-role">
+            <p className="text-xs text-muted-foreground capitalize font-medium" data-testid="text-user-role">
               {user?.role}
             </p>
           </div>
@@ -144,7 +171,7 @@ export function AppSidebar() {
             variant="ghost"
             size="icon"
             onClick={logout}
-            className="shrink-0"
+            className="shrink-0 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors"
             data-testid="button-logout"
           >
             <LogOut className="w-4 h-4" />

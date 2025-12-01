@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,8 +10,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useLocation } from "wouter";
 import {
   User,
   Lock,
@@ -21,10 +22,19 @@ import {
   Loader2,
   Camera,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function Settings() {
   const { user, refetch } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const [profile, setProfile] = useState({
     name: user?.name || "",
@@ -33,13 +43,52 @@ export default function Settings() {
     bio: user?.doctor?.bio || "",
     phone: user?.patient?.phone || "",
     address: user?.patient?.address || "",
+    medicalConditions: (user?.patient?.medicalConditions || []) as string[],
   });
+  const [newCondition, setNewCondition] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      setProfile({
+        name: user.name || "",
+        specialty: user.doctor?.specialty || "",
+        licenseNumber: user.doctor?.licenseNumber || "",
+        bio: user.doctor?.bio || "",
+        phone: user.patient?.phone || "",
+        address: user.patient?.address || "",
+        medicalConditions: (user.patient?.medicalConditions || []) as string[],
+      });
+    }
+  }, [user]);
 
   const [notifications, setNotifications] = useState({
     emailAppointments: true,
     emailNotes: true,
     emailSurveys: true,
   });
+
+  const [passwordDialog, setPasswordDialog] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [deletePassword, setDeletePassword] = useState("");
+
+  const { data: notificationData } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/user/notifications');
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (notificationData) {
+      setNotifications(notificationData);
+    }
+  }, [notificationData]);
 
   const profileMutation = useMutation({
     mutationFn: async (data: typeof profile) => {
@@ -62,6 +111,80 @@ export default function Settings() {
     },
   });
 
+  const notificationMutation = useMutation({
+    mutationFn: async (data: typeof notifications) => {
+      const res = await apiRequest("PATCH", "/api/user/notifications", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Notifications Updated",
+        description: "Your notification preferences have been saved.",
+      });
+    },
+  });
+
+  const passwordMutation = useMutation({
+    mutationFn: async (data: typeof passwordForm) => {
+      const res = await apiRequest("POST", "/api/user/change-password", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      setPasswordDialog(false);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      toast({
+        title: "Password Changed",
+        description: "Your password has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Password Change Failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (password: string) => {
+      const res = await apiRequest("DELETE", "/api/user/delete-account", { password });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Account Deleted",
+        description: "Your account has been permanently deleted.",
+      });
+      setLocation("/login");
+    },
+    onError: (error) => {
+      toast({
+        title: "Deletion Failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleNotificationChange = (key: keyof typeof notifications, value: boolean) => {
+    const updated = { ...notifications, [key]: value };
+    setNotifications(updated);
+    notificationMutation.mutate(updated);
+  };
+
+  const handlePasswordChange = () => {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({
+        title: "Passwords Don't Match",
+        description: "New password and confirmation must match.",
+        variant: "destructive",
+      });
+      return;
+    }
+    passwordMutation.mutate(passwordForm);
+  };
+
   const getInitials = (name: string) => {
     return name
       .split(" ")
@@ -69,6 +192,44 @@ export default function Settings() {
       .join("")
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const avatarMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const res = await apiRequest("POST", "/api/user/upload-avatar", formData);
+      return res.json();
+    },
+    onSuccess: async () => {
+      await refetch();
+      toast({
+        title: "Avatar Updated",
+        description: "Your profile picture has been updated.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File Too Large",
+          description: "Maximum file size is 5MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      avatarMutation.mutate(file);
+    }
   };
 
   return (
@@ -97,17 +258,30 @@ export default function Settings() {
             <div className="flex items-center gap-6">
               <div className="relative">
                 <Avatar className="w-24 h-24">
-                  <AvatarImage src={user?.avatarUrl || undefined} />
+                  <AvatarImage src={user?.avatarUrl || undefined} className="object-cover" />
                   <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
                     {getInitials(user?.name || "")}
                   </AvatarFallback>
                 </Avatar>
+                <input
+                  type="file"
+                  id="avatar-upload"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
                 <Button
                   size="icon"
                   variant="secondary"
                   className="absolute bottom-0 right-0 w-8 h-8 rounded-full"
+                  onClick={() => document.getElementById('avatar-upload')?.click()}
+                  disabled={avatarMutation.isPending}
                 >
-                  <Camera className="w-4 h-4" />
+                  {avatarMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Camera className="w-4 h-4" />
+                  )}
                 </Button>
               </div>
               <div>
@@ -182,28 +356,72 @@ export default function Settings() {
               )}
 
               {user?.role === "patient" && (
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input
-                      id="phone"
-                      placeholder="Your contact number"
-                      value={profile.phone}
-                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                      data-testid="input-phone"
-                    />
+                <>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Phone Number</Label>
+                      <Input
+                        id="phone"
+                        placeholder="Your contact number"
+                        value={profile.phone}
+                        onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                        data-testid="input-phone"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address">Address</Label>
+                      <Input
+                        id="address"
+                        placeholder="Your address"
+                        value={profile.address}
+                        onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                        data-testid="input-address"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
-                    <Input
-                      id="address"
-                      placeholder="Your address"
-                      value={profile.address}
-                      onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                      data-testid="input-address"
-                    />
+                    <Label>Medical Conditions</Label>
+                    <p className="text-sm text-muted-foreground">Add conditions to connect with similar patients</p>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="e.g., diabetes, arthritis"
+                        value={newCondition}
+                        onChange={(e) => setNewCondition(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && newCondition.trim()) {
+                            setProfile({ ...profile, medicalConditions: [...profile.medicalConditions, newCondition.trim()] });
+                            setNewCondition("");
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          if (newCondition.trim()) {
+                            setProfile({ ...profile, medicalConditions: [...profile.medicalConditions, newCondition.trim()] });
+                            setNewCondition("");
+                          }
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {profile.medicalConditions.map((condition, idx) => (
+                        <span key={idx} className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                          {condition}
+                          <button
+                            onClick={() => setProfile({ ...profile, medicalConditions: profile.medicalConditions.filter((_, i) => i !== idx) })}
+                            className="hover:text-destructive"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
 
@@ -243,9 +461,7 @@ export default function Settings() {
               </div>
               <Switch
                 checked={notifications.emailAppointments}
-                onCheckedChange={(checked) =>
-                  setNotifications({ ...notifications, emailAppointments: checked })
-                }
+                onCheckedChange={(checked) => handleNotificationChange('emailAppointments', checked)}
                 data-testid="switch-appointments"
               />
             </div>
@@ -259,9 +475,7 @@ export default function Settings() {
               </div>
               <Switch
                 checked={notifications.emailNotes}
-                onCheckedChange={(checked) =>
-                  setNotifications({ ...notifications, emailNotes: checked })
-                }
+                onCheckedChange={(checked) => handleNotificationChange('emailNotes', checked)}
                 data-testid="switch-notes"
               />
             </div>
@@ -275,9 +489,7 @@ export default function Settings() {
               </div>
               <Switch
                 checked={notifications.emailSurveys}
-                onCheckedChange={(checked) =>
-                  setNotifications({ ...notifications, emailSurveys: checked })
-                }
+                onCheckedChange={(checked) => handleNotificationChange('emailSurveys', checked)}
                 data-testid="switch-surveys"
               />
             </div>
@@ -325,7 +537,7 @@ export default function Settings() {
                   Update your account password
                 </p>
               </div>
-              <Button variant="outline" data-testid="button-change-password">
+              <Button variant="outline" onClick={() => setPasswordDialog(true)} data-testid="button-change-password">
                 Change Password
               </Button>
             </div>
@@ -337,13 +549,98 @@ export default function Settings() {
                   Permanently delete your account and all data
                 </p>
               </div>
-              <Button variant="destructive" data-testid="button-delete-account">
+              <Button variant="destructive" onClick={() => setDeleteDialog(true)} data-testid="button-delete-account">
                 Delete Account
               </Button>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={passwordDialog} onOpenChange={setPasswordDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Enter your current password and choose a new one.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="current">Current Password</Label>
+              <Input
+                id="current"
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new">New Password</Label>
+              <Input
+                id="new"
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm">Confirm New Password</Label>
+              <Input
+                id="confirm"
+                type="password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handlePasswordChange} disabled={passwordMutation.isPending}>
+              {passwordMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Change Password
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Account</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. All your data will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-password">Confirm Password</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                placeholder="Enter your password to confirm"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMutation.mutate(deletePassword)}
+              disabled={deleteMutation.isPending || !deletePassword}
+            >
+              {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete Account
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

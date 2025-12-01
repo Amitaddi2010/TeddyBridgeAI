@@ -17,7 +17,7 @@
    - **Root Directory**: Leave as root (don't change to client)
    - **Framework Preset**: Vite (should auto-detect)
    - **Build Command**: `npm run build`
-   - **Output Directory**: `dist/public`
+   - **Output Directory**: `dist`
 
 4. **Deploy**:
    - Click "Deploy" button

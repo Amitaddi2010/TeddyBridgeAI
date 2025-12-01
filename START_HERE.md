@@ -57,6 +57,15 @@
    
    Add these one by one:
    ```
+   Name: GROQ_API_KEY
+   Value: gsk_your_groq_api_key_here
+   (Get from: https://console.groq.com/)
+   
+   Name: ASSEMBLYAI_API_KEY
+   Value: your_assemblyai_api_key_here
+   (Get from: https://www.assemblyai.com/)
+   (Optional - only if using transcription)
+   
    Name: DJANGO_SECRET_KEY
    Value: (generate a random string - use: https://djecrety.ir/)
    
@@ -76,9 +85,11 @@
    Name: DJANGO_SUPERUSER_PASSWORD
    Value: YourSecurePassword123! (choose a strong password)
    
-   Name: DJANGO_SUPERUSER_USERNAME
-   Value: admin (optional, defaults to 'admin')
+   Name: IS_PRODUCTION
+   Value: True (optional, helps with cookie settings)
    ```
+   
+   > 📖 **See [API_KEYS_SETUP.md](./API_KEYS_SETUP.md) for detailed instructions**
 
 6. **Deploy**:
    - Click "Create Web Service"

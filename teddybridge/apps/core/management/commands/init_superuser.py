@@ -15,7 +15,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         admin_email = os.getenv('DJANGO_SUPERUSER_EMAIL')
         admin_password = os.getenv('DJANGO_SUPERUSER_PASSWORD')
-        admin_username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'admin')
+        admin_name = os.getenv('DJANGO_SUPERUSER_USERNAME', 'Admin')  # Used as name, not username
 
         if not admin_email or not admin_password:
             self.stdout.write(
@@ -35,7 +35,8 @@ class Command(BaseCommand):
         User.objects.create_superuser(
             email=admin_email,
             password=admin_password,
-            username=admin_username
+            name=admin_name,
+            role='doctor'  # Superusers are typically doctors
         )
         self.stdout.write(
             self.style.SUCCESS(f'Successfully created superuser: {admin_email}')

@@ -1,0 +1,14 @@
+Django==5.0.1
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+PyJWT==2.8.0
+bcrypt==4.1.2
+qrcode==7.4.2
+Pillow==10.2.0
+groq==0.4.1
+requests==2.31.0
+twilio==8.10.0
+assemblyai==0.17.0
+reportlab==4.0.7

@@ -9,6 +9,8 @@ from teddybridge.apps.core.urls import user_urlpatterns
 from teddybridge.apps.doctors import survey_views
 
 urlpatterns = [
+    path('', core_views.api_info),  # Root endpoint
+    path('api/health', core_views.health_check),  # Health check endpoint
     path('admin/', admin.site.urls),
     path('api/auth/', include('teddybridge.apps.core.urls')),
     path('api/user/', include(user_urlpatterns)),

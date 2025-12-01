@@ -442,3 +442,30 @@ def mark_all_notifications_read(request):
     
     Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
     return Response({'success': True})
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """Health check endpoint for monitoring"""
+    return Response({
+        'status': 'healthy',
+        'service': 'TeddyBridge API',
+        'version': '1.0.0'
+    })
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def api_info(request):
+    """Root endpoint that provides API information"""
+    return Response({
+        'name': 'TeddyBridge API',
+        'version': '1.0.0',
+        'status': 'running',
+        'endpoints': {
+            'auth': '/api/auth/',
+            'admin': '/admin/',
+            'health': '/api/health',
+            'docs': 'See /api/auth/ for authentication endpoints'
+        },
+        'message': 'Welcome to TeddyBridge API. Use /api/auth/ endpoints for authentication.'
+    })

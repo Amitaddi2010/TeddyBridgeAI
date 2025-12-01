@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: teddybridge-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn teddybridge.wsgi:application
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      - key: DJANGO_DEBUG
+        value: False
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+

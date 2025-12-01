@@ -158,7 +158,8 @@ If you need shell access, use Railway instead:
 ### Backend shows 500 error?
 - Check Render logs (Logs tab)
 - Make sure all environment variables are set
-- Try running migrations in Shell
+- Migrations run automatically on deployment (no Shell needed!)
+- Make sure `DJANGO_SUPERUSER_EMAIL` and `DJANGO_SUPERUSER_PASSWORD` are set
 
 ### CORS errors?
 - Check `CORS_ALLOWED_ORIGINS` includes your Vercel URL

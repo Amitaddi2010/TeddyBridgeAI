@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getApiUrl } from './api-config';
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -6,8 +7,6 @@ async function throwIfResNotOk(res: Response) {
     throw new Error(`${res.status}: ${text}`);
   }
 }
-
-import { getApiUrl } from './api-config';
 
 export async function apiRequest(
   method: string,
@@ -31,7 +30,6 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-import { getApiUrl } from './api-config';
 
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;

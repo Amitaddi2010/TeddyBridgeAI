@@ -107,7 +107,8 @@ CORS_ALLOW_CREDENTIALS = True
 # Session Cookie Configuration
 # For production (HTTPS), use 'None' and Secure=True for cross-origin cookies
 # For development (HTTP), use 'Lax' and Secure=False
-IS_PRODUCTION = not DEBUG or os.getenv('IS_PRODUCTION', 'False') == 'True'
+# Detect production: if DEBUG is False or we're on Render (has .onrender.com in ALLOWED_HOSTS)
+IS_PRODUCTION = not DEBUG or any('.onrender.com' in host for host in ALLOWED_HOSTS) or os.getenv('IS_PRODUCTION', 'False') == 'True'
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'None' if IS_PRODUCTION else 'Lax'

@@ -95,11 +95,15 @@
    - Open your project
    - Go to "Settings" → "Environment Variables"
 
-2. **Add API URL**:
+2. **Add API URL** (CRITICAL - Required for API calls to work):
    ```
    Key: VITE_API_URL
    Value: https://your-render-url.onrender.com
-   (Replace with your actual Render URL)
+   (Replace with your actual Render URL from Part 2)
+   
+   IMPORTANT: Make sure the URL does NOT end with /api
+   Example: https://teddybridge-api.onrender.com ✅
+   NOT: https://teddybridge-api.onrender.com/api ❌
    ```
 
 3. **Redeploy**:

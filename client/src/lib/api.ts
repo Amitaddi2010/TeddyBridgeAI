@@ -1,8 +1,10 @@
+import { getApiUrl } from './api-config';
+
 const API_BASE_URL = '/api';
 
 export const api = {
   get: async (endpoint: string) => {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(getApiUrl(endpoint), {
       credentials: 'include',
     });
     if (!res.ok) throw new Error(await res.text());
@@ -10,7 +12,7 @@ export const api = {
   },
 
   post: async (endpoint: string, data?: any) => {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(getApiUrl(endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -21,7 +23,7 @@ export const api = {
   },
 
   patch: async (endpoint: string, data?: any) => {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const res = await fetch(getApiUrl(endpoint), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

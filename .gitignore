@@ -36,6 +36,9 @@ ENV/
 *.swo
 *~
 
+# Replit (optional - only needed if using Replit platform)
+.replit
+
 # OS
 .DS_Store
 Thumbs.db

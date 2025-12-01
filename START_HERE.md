@@ -14,10 +14,11 @@
    - Click "Import"
 
 3. **Configure**:
-   - **Root Directory**: Leave as root (don't change to client)
-   - **Framework Preset**: Vite (should auto-detect)
+   - **Root Directory**: Leave as root (IMPORTANT: Do NOT change to `client`)
+   - **Framework Preset**: Other (or leave blank)
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
+   - **Install Command**: `npm install`
 
 4. **Deploy**:
    - Click "Deploy" button

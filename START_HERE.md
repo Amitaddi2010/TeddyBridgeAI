@@ -67,6 +67,15 @@
    Name: CORS_ALLOWED_ORIGINS
    Value: https://your-vercel-url.vercel.app
    (Replace with your actual Vercel URL from Part 1)
+   
+   Name: DJANGO_SUPERUSER_EMAIL
+   Value: admin@yourdomain.com (your email for admin login)
+   
+   Name: DJANGO_SUPERUSER_PASSWORD
+   Value: YourSecurePassword123! (choose a strong password)
+   
+   Name: DJANGO_SUPERUSER_USERNAME
+   Value: admin (optional, defaults to 'admin')
    ```
 
 6. **Deploy**:
@@ -99,18 +108,36 @@
 
 ---
 
-### Part 4: Setup Database (2 minutes)
+### Part 4: Setup Database (FREE - No Shell Needed!)
 
-1. **Go to Render Dashboard**:
-   - Open your web service
-   - Click "Shell" tab (at the top)
+**Option 1: Automatic Setup (Recommended - FREE)**
 
-2. **Run Commands**:
-   ```bash
-   python manage.py migrate
-   python manage.py createsuperuser
+1. **Add Superuser Environment Variables in Render**:
+   - Go to your Render service → Settings → Environment
+   - Add these variables:
    ```
-   (Follow prompts to create admin user)
+   Name: DJANGO_SUPERUSER_EMAIL
+   Value: admin@yourdomain.com (your email)
+   
+   Name: DJANGO_SUPERUSER_PASSWORD
+   Value: YourSecurePassword123! (choose a strong password)
+   
+   Name: DJANGO_SUPERUSER_USERNAME
+   Value: admin (optional, defaults to 'admin')
+   ```
+
+2. **Migrations run automatically**:
+   - Migrations will run automatically on each deployment
+   - Superuser will be created automatically if it doesn't exist
+   - No Shell access needed! ✅
+
+**Option 2: Use Railway Instead (FREE with $5 credit - Has Shell)**
+
+If you need shell access, use Railway instead:
+1. Go to https://railway.app
+2. Sign up (get $5 free credit - lasts months)
+3. Deploy your repo
+4. Railway has free shell access ✅
 
 ---
 

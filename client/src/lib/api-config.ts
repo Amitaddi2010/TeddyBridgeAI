@@ -20,21 +20,26 @@ export const API_BASE_URL = getApiBaseUrl();
 
 // Helper to build full API URLs
 export const getApiUrl = (endpoint: string): string => {
-  // Remove leading slash if present to avoid double slashes
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+  // Remove leading slash if present
+  let cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
   
-  // If API_BASE_URL ends with /api, we need to handle the endpoint properly
-  if (API_BASE_URL.endsWith('/api')) {
-    return `${API_BASE_URL}/${cleanEndpoint}`;
+  // If endpoint already starts with 'api/', remove it to avoid double 'api/api/'
+  if (cleanEndpoint.startsWith('api/')) {
+    cleanEndpoint = cleanEndpoint.slice(4); // Remove 'api/' prefix
   }
   
-  // If API_BASE_URL is a full URL, ensure proper formatting
+  // If API_BASE_URL is a full URL (production), add /api/ prefix
   if (API_BASE_URL.startsWith('http')) {
     const base = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
     return `${base}/api/${cleanEndpoint}`;
   }
   
-  // Default: relative URL
+  // If API_BASE_URL ends with /api (shouldn't happen, but handle it)
+  if (API_BASE_URL.endsWith('/api')) {
+    return `${API_BASE_URL}/${cleanEndpoint}`;
+  }
+  
+  // Default: relative URL with /api/ prefix
   return `/api/${cleanEndpoint}`;
 };
 

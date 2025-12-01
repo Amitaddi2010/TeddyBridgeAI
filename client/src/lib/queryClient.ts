@@ -7,6 +7,8 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+import { getApiUrl } from './api-config';
+
 export async function apiRequest(
   method: string,
   url: string,
@@ -14,7 +16,10 @@ export async function apiRequest(
 ): Promise<Response> {
   const isFormData = data instanceof FormData;
   
-  const res = await fetch(url, {
+  // Use getApiUrl to ensure correct API base URL in production
+  const fullUrl = url.startsWith('http') ? url : getApiUrl(url);
+  
+  const res = await fetch(fullUrl, {
     method,
     headers: data && !isFormData ? { "Content-Type": "application/json" } : {},
     body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
@@ -26,12 +31,18 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
+import { getApiUrl } from './api-config';
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    // Build URL from queryKey, ensuring it uses correct API base URL
+    const urlPath = queryKey.join("/") as string;
+    const fullUrl = urlPath.startsWith('http') ? urlPath : getApiUrl(urlPath);
+    
+    const res = await fetch(fullUrl, {
       credentials: "include",
     });
 

@@ -41,6 +41,17 @@ def create_meeting(request):
                 doctor = Doctor.objects.get(id=doctor_id)
             except Doctor.DoesNotExist:
                 return Response({'error': 'Doctor not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Check if patient is linked to this doctor
+            from teddybridge.apps.core.models import DoctorPatientLink
+            is_linked = DoctorPatientLink.objects.filter(doctor=doctor, patient=patient).exists()
+            
+            # For immediate calls, patient must be linked to the doctor
+            is_immediate = request.data.get('isImmediate', False)
+            if is_immediate and not is_linked:
+                return Response({
+                    'error': 'You must be linked to this doctor before calling. Please ask the doctor to schedule a meeting or link via QR code.'
+                }, status=status.HTTP_403_FORBIDDEN)
         else:
             return Response({'error': 'Invalid user role'}, status=status.HTTP_403_FORBIDDEN)
     except (Doctor.DoesNotExist, Patient.DoesNotExist):
@@ -55,6 +66,8 @@ def create_meeting(request):
     title = request.data.get('title', 'Video Consultation')
     scheduled_at = request.data.get('scheduledAt')
     is_immediate = request.data.get('isImmediate', False)
+    
+    # Note: Link check for patients was already done above
     
     # If immediate call, set status to 'in_progress' and no scheduled time
     if is_immediate:

@@ -47,22 +47,36 @@ export function CallNotification() {
     }
   }, [notifications, showCallDialog]);
 
-  const handleAccept = () => {
+  const handleAccept = async () => {
     if (incomingCall?.link) {
-      // Mark notification as read
-      apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
-      setLocation(incomingCall.link);
-      setShowCallDialog(false);
-      setIncomingCall(null);
+      try {
+        // Mark notification as read
+        await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
+        setShowCallDialog(false);
+        setIncomingCall(null);
+        // Navigate to meeting
+        setLocation(incomingCall.link);
+      } catch (error) {
+        console.error("Failed to accept call:", error);
+        // Still navigate even if marking as read fails
+        setShowCallDialog(false);
+        setIncomingCall(null);
+        setLocation(incomingCall.link);
+      }
     }
   };
 
   const handleDecline = async () => {
     if (incomingCall) {
-      // Mark notification as read
-      await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
-      setShowCallDialog(false);
-      setIncomingCall(null);
+      try {
+        // Mark notification as read
+        await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
+      } catch (error) {
+        console.error("Failed to decline call:", error);
+      } finally {
+        setShowCallDialog(false);
+        setIncomingCall(null);
+      }
     }
   };
 

@@ -164,7 +164,7 @@ function ReviewDialog({ doctorId, doctorName, currentRating }: { doctorId: strin
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/patient/reviews/submit", {
+      const res = await fetch(getApiUrl("/patient/reviews/submit"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

@@ -75,25 +75,38 @@ export default function Meeting() {
     if (typeof TwilioVideo !== 'undefined' && TwilioVideo.Logger) {
       // Set log level to error to suppress warnings
       TwilioVideo.Logger.setLevel('error');
-      // Alternatively, filter out track-stalled warnings
-      const originalLog = console.warn;
-      console.warn = (...args: any[]) => {
-        // Suppress Twilio track-stalled telemetry warnings
-        if (args[0] && typeof args[0] === 'string' && args[0].includes('track-stalled')) {
-          return;
-        }
-        // Suppress Twilio telemetry warnings
-        if (args[0] && typeof args[0] === 'string' && args[0].includes('[connect') && args[0].includes('telemetry')) {
-          return;
-        }
-        originalLog.apply(console, args);
-      };
-      
-      return () => {
-        // Restore original console.warn on cleanup
-        console.warn = originalLog;
-      };
     }
+    
+    // Filter out Twilio telemetry warnings from console
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    
+    console.warn = (...args: any[]) => {
+      // Check if it's a Twilio telemetry warning (string or object)
+      const isTwilioWarning = args.some((arg) => {
+        if (typeof arg === 'string') {
+          return (arg.includes('[connect') || arg.includes('connect #')) && 
+                 (arg.includes('telemetry') || arg.includes('track-stalled'));
+        }
+        if (arg && typeof arg === 'object') {
+          // Check if it's the telemetry object structure
+          return arg.group === 'track-warning-raised' || 
+                 arg.name === 'track-stalled' ||
+                 (arg.level === 'warning' && arg.group === 'track-warning-raised');
+        }
+        return false;
+      });
+      
+      if (!isTwilioWarning) {
+        originalWarn.apply(console, args);
+      }
+    };
+    
+    return () => {
+      // Restore original console methods on cleanup
+      console.warn = originalWarn;
+      console.error = originalError;
+    };
   }, []);
 
   const [showConsentModal, setShowConsentModal] = useState(false);
@@ -700,14 +713,28 @@ export default function Meeting() {
     
     return () => {
       isConnectingRef.current = false;
+      
+      // Remove event handlers before disconnecting
       if (roomRef.current) {
         try {
+          // Remove participant event handlers
+          if (participantConnectedHandlerRef.current) {
+            roomRef.current.off('participantConnected', participantConnectedHandlerRef.current);
+            participantConnectedHandlerRef.current = null;
+          }
+          if (participantDisconnectedHandlerRef.current) {
+            roomRef.current.off('participantDisconnected', participantDisconnectedHandlerRef.current);
+            participantDisconnectedHandlerRef.current = null;
+          }
+          
+          // Disconnect room
           roomRef.current.disconnect();
         } catch (err) {
           console.error("Error disconnecting room in cleanup:", err);
         }
         roomRef.current = null;
       }
+      
       // Clean up local tracks
       if (localVideoTrackRef.current) {
         try {
@@ -725,6 +752,11 @@ export default function Meeting() {
         }
         localAudioTrackRef.current = null;
       }
+      
+      // Reset flags
+      eventHandlersAttachedRef.current = false;
+      hasShownConnectedToastRef.current = false;
+      notificationThrottleRef.current.clear();
     };
   }, [isJoined, meetingInfo?.roomName, meetingInfo?.twilioToken, isVideoOn, toast, user?.name, meetingId]);
 

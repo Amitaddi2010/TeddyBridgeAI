@@ -38,14 +38,14 @@ export function CallNotification() {
   useEffect(() => {
     // Find unread call notifications
     const callNotification = notifications.find(
-      (n) => !n.isRead && n.type === "call" && n.link?.startsWith("/meeting/")
+      (n) => !n.isRead && (n.type === "call" || n.title === "Incoming Call") && n.link?.startsWith("/meeting/")
     );
 
-    if (callNotification && !showCallDialog) {
+    if (callNotification && !showCallDialog && !incomingCall) {
       setIncomingCall(callNotification);
       setShowCallDialog(true);
     }
-  }, [notifications, showCallDialog]);
+  }, [notifications, showCallDialog, incomingCall]);
 
   const handleAccept = async () => {
     if (incomingCall?.link) {

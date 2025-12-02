@@ -493,34 +493,89 @@ export default function Meeting() {
           title: "Connected",
           description: isVideoOn ? "Video call connected." : "Audio call connected.",
         });
+        // Reset connecting flag on successful connection
+        isConnectingRef.current = false;
       } catch (err: any) {
         console.error('Failed to join call:', err);
-        toast({
-          title: "Connection Failed",
-          description: err.message || "Could not connect.",
-          variant: "destructive",
-        });
+        // Reset connecting flag on error
+        isConnectingRef.current = false;
+        
+        // Clean up any partial connection state
+        if (roomRef.current) {
+          try {
+            roomRef.current.disconnect();
+          } catch (cleanupErr) {
+            console.error("Error during cleanup:", cleanupErr);
+          }
+          roomRef.current = null;
+        }
+        
+        // Clean up tracks
+        if (localVideoTrackRef.current) {
+          try {
+            localVideoTrackRef.current.stop();
+          } catch (cleanupErr) {
+            console.error("Error stopping video track:", cleanupErr);
+          }
+          localVideoTrackRef.current = null;
+        }
+        if (localAudioTrackRef.current) {
+          try {
+            localAudioTrackRef.current.stop();
+          } catch (cleanupErr) {
+            console.error("Error stopping audio track:", cleanupErr);
+          }
+          localAudioTrackRef.current = null;
+        }
+        
+        // If it's a duplicate identity error, wait and retry
+        if (err.message && (err.message.includes('duplicate identity') || err.message.includes('DuplicateIdentity'))) {
+          console.log("Duplicate identity detected, will retry automatically...");
+          // Wait a bit before allowing retry (the useEffect will retry since isJoined is still true)
+          setTimeout(() => {
+            isConnectingRef.current = false;
+          }, 2000);
+        } else {
+          toast({
+            title: "Connection Failed",
+            description: err.message || "Could not connect. Please try again.",
+            variant: "destructive",
+          });
+        }
       }
     };
     
     initCall();
     
     return () => {
+      isConnectingRef.current = false;
       if (roomRef.current) {
-        roomRef.current.disconnect();
+        try {
+          roomRef.current.disconnect();
+        } catch (err) {
+          console.error("Error disconnecting room in cleanup:", err);
+        }
         roomRef.current = null;
       }
       // Clean up local tracks
       if (localVideoTrackRef.current) {
-        localVideoTrackRef.current.stop();
+        try {
+          localVideoTrackRef.current.stop();
+        } catch (err) {
+          console.error("Error stopping video track in cleanup:", err);
+        }
         localVideoTrackRef.current = null;
       }
       if (localAudioTrackRef.current) {
-        localAudioTrackRef.current.stop();
+        try {
+          localAudioTrackRef.current.stop();
+        } catch (err) {
+          console.error("Error stopping audio track in cleanup:", err);
+        }
         localAudioTrackRef.current = null;
       }
     };
-  }, [isJoined, meetingInfo, isVideoOn, toast, user?.name, getParticipantName, participants.size]);
+  }, [isJoined, meetingInfo?.roomName, meetingInfo?.twilioToken, isVideoOn, toast, user?.name, meetingId]);
 
   if (isLoading) {
     return (

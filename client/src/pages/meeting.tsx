@@ -469,12 +469,9 @@ export default function Meeting() {
             }
           });
           
-          // Subscribe to tracks that aren't subscribed yet
-          participant.tracks.forEach(publication => {
-            if (!publication.isSubscribed) {
-              publication.setSubscribed(true);
-            }
-          });
+          // Note: Tracks are automatically subscribed when published
+          // We don't need to manually call setSubscribed
+          // Just wait for trackSubscribed events
         });
         
         // Handle new participants joining - only attach once
@@ -507,24 +504,14 @@ export default function Meeting() {
             return newSet;
           });
           
-          // Handle existing tracks - subscribe and attach
+          // Handle existing tracks - attach if already subscribed
           participant.tracks.forEach((publication: any) => {
             if (publication.track && publication.isSubscribed) {
               attachTrackToDOM(publication.track, participant.identity);
-            } else if (publication.track && !publication.isSubscribed) {
-              // Subscribe to track if not already subscribed
-              publication.setSubscribed(true);
             }
           });
           
-          // Subscribe to all available tracks
-          participant.tracks.forEach((publication: any) => {
-            if (!publication.isSubscribed) {
-              publication.setSubscribed(true);
-            }
-          });
-          
-          // Handle new tracks being subscribed
+          // Handle new tracks being subscribed (tracks auto-subscribe when published)
           participant.on('trackSubscribed', (track: any) => {
             attachTrackToDOM(track, participant.identity);
           });
@@ -550,14 +537,18 @@ export default function Meeting() {
             if (track.kind === 'video') {
               const videoElement = document.getElementById(`remote-video-${participant.identity}`);
               if (videoElement) videoElement.remove();
+            } else {
+              const audioElement = document.getElementById(`remote-audio-${participant.identity}`);
+              if (audioElement) audioElement.remove();
             }
           });
           
           // Handle track published events for this participant
+          // Note: When a track is published, it's automatically subscribed
+          // We just need to wait for the trackSubscribed event
           participant.on('trackPublished', (publication: any) => {
-            if (publication.track) {
-              publication.setSubscribed(true);
-            }
+            // Track will be automatically subscribed, trackSubscribed event will fire
+            console.log(`Track published: ${publication.trackName} (${publication.kind})`);
           });
         };
         

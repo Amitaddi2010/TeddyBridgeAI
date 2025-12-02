@@ -520,29 +520,59 @@ export default function Meeting() {
         
         // Handle participants leaving
         room.on('participantDisconnected', async (participant) => {
+          // Only notify if this participant was previously notified as joined
+          const wasNotified = notifiedParticipantsRef.current.has(participant.identity);
+          
+          // Clean up all track elements for this participant first
+          const elements = trackElementsRef.current.get(participant.identity);
+          if (elements) {
+            elements.forEach(element => {
+              try {
+                element.remove();
+              } catch (e) {
+                console.error("Error removing track element:", e);
+              }
+            });
+            trackElementsRef.current.delete(participant.identity);
+          }
+          
+          // Also remove any video/audio elements with this participant's identity
+          const allElements = document.querySelectorAll(`[id^="remote-video-${participant.identity}"], [id^="remote-audio-${participant.identity}"]`);
+          allElements.forEach(el => el.remove());
+          
+          // Update participant count before checking
           setParticipants(prev => {
             const newSet = new Set(prev);
             newSet.delete(participant.identity);
+            
+            // Only show notification if participant was previously notified and we're removing them
+            if (wasNotified && newSet.size < prev.size) {
+              notifiedParticipantsRef.current.delete(participant.identity);
+              
+              // Use setTimeout to avoid state update issues
+              setTimeout(() => {
+                const participantName = getParticipantName();
+                toast({
+                  title: "Participant Left",
+                  description: `${participantName} has left the call.`,
+                  duration: 3000,
+                });
+                
+                // Notify backend only once
+                notifyParticipantEvent('left', participantName).catch(console.error);
+              }, 100);
+            }
+            
+            // Show fallback if no remote participants left
+            if (newSet.size === 0) {
+              setTimeout(() => {
+                const fallback = document.getElementById('video-fallback');
+                if (fallback) fallback.style.display = 'flex';
+              }, 200);
+            }
+            
             return newSet;
           });
-          
-          const participantName = getParticipantName();
-          toast({
-            title: "Participant Left",
-            description: `${participantName} has left the call.`,
-          });
-          
-          // Remove video elements
-          const videoElement = document.getElementById(`remote-video-${participant.identity}`);
-          if (videoElement) {
-            videoElement.remove();
-          }
-          
-          // Show fallback if no participants
-          if (participants.size === 0) {
-            const fallback = document.getElementById('video-fallback');
-            if (fallback) fallback.style.display = 'flex';
-          }
         });
         
         // Handle local video track
@@ -577,10 +607,18 @@ export default function Meeting() {
           }
         });
         
-        toast({
-          title: "Connected",
-          description: isVideoOn ? "Video call connected." : "Audio call connected.",
-        });
+        // Show connected toast only once
+        if (!roomRef.current?._hasShownConnectedToast) {
+          toast({
+            title: "Connected",
+            description: isVideoOn ? "Video call connected." : "Audio call connected.",
+            duration: 3000,
+          });
+          // Mark as shown to prevent duplicate toasts
+          if (roomRef.current) {
+            roomRef.current._hasShownConnectedToast = true;
+          }
+        }
         // Reset connecting flag on successful connection
         isConnectingRef.current = false;
       } catch (err: any) {

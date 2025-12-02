@@ -111,6 +111,7 @@ export default function Meeting() {
 
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showEndCallModal, setShowEndCallModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [consentScrolled, setConsentScrolled] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);

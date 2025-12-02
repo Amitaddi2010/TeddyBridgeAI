@@ -778,10 +778,10 @@ export default function Meeting() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {participants.size > 0 && (
+            {participants.size >= 0 && (
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
                 <Users className="w-3 h-3 mr-1" />
-                {participants.size + 1} participant{participants.size > 0 ? 's' : ''}
+                {participants.size + 1} participant{(participants.size + 1) !== 1 ? 's' : ''}
               </Badge>
             )}
             {isRecording && (

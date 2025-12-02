@@ -15,6 +15,7 @@ import { StarRating } from "@/components/ui/star-rating";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getApiUrl } from "@/lib/api-config";
 import {
   Stethoscope,
   Calendar,

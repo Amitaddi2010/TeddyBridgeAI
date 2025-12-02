@@ -114,7 +114,7 @@ export default function PeerNetwork() {
   const [showAllPeers, setShowAllPeers] = useState(true);
 
   const loadFeed = async () => {
-    const res = await fetch("/api/peers/feed", { credentials: "include" });
+    const res = await fetch(getApiUrl("/peers/feed"), { credentials: "include" });
     const data = await res.json();
     setFeed(data);
   };
@@ -122,7 +122,7 @@ export default function PeerNetwork() {
   const createPost = async () => {
     if (!newPost.trim()) return;
     
-    const res = await fetch("/api/peers/posts/create", {
+    const res = await fetch(getApiUrl("/peers/posts/create"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -137,7 +137,7 @@ export default function PeerNetwork() {
   };
 
   const toggleLike = async (postId: string) => {
-    const res = await fetch(`/api/peers/posts/${postId}/like`, {
+    const res = await fetch(getApiUrl(`/peers/posts/${postId}/like`), {
       method: "POST",
       credentials: "include",
     });
@@ -148,7 +148,7 @@ export default function PeerNetwork() {
   };
 
   const loadComments = async (postId: string) => {
-    const res = await fetch(`/api/peers/posts/${postId}/comments`, { credentials: "include" });
+    const res = await fetch(getApiUrl(`/peers/posts/${postId}/comments`), { credentials: "include" });
     const data = await res.json();
     setComments(data);
   };
@@ -156,7 +156,7 @@ export default function PeerNetwork() {
   const addComment = async (postId: string) => {
     if (!newComment.trim()) return;
     
-    const res = await fetch(`/api/peers/posts/${postId}/comments`, {
+    const res = await fetch(getApiUrl(`/peers/posts/${postId}/comments`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -171,7 +171,7 @@ export default function PeerNetwork() {
   };
 
   const deletePost = async (postId: string) => {
-    const res = await fetch(`/api/peers/posts/${postId}`, {
+    const res = await fetch(getApiUrl(`/peers/posts/${postId}`), {
       method: "DELETE",
       credentials: "include",
     });
@@ -183,7 +183,7 @@ export default function PeerNetwork() {
   };
 
   const loadAllPeers = async () => {
-    const res = await fetch("/api/peers/search", { credentials: "include" });
+    const res = await fetch(getApiUrl("/peers/search"), { credentials: "include" });
     const data = await res.json();
     setAllPeers(data);
   };
@@ -192,7 +192,7 @@ export default function PeerNetwork() {
     const params = new URLSearchParams();
     if (conditionFilter) params.append('condition', conditionFilter);
     
-    const res = await fetch(`/api/peers/search?${params}`, { credentials: "include" });
+    const res = await fetch(getApiUrl(`/peers/search?${params}`), { credentials: "include" });
     const data = await res.json();
     setSearchResults(data);
   };

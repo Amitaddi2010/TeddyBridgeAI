@@ -470,10 +470,10 @@ export default function PatientDoctors() {
                                 const data = await res.json();
                                 window.location.href = `/meeting/${data.id}`;
                               } else {
-                                const error = await res.json();
+                                const errorData = await res.json();
                                 toast({
-                                  title: "Failed to start call",
-                                  description: error.error || "Please try again",
+                                  title: "Cannot Start Call",
+                                  description: errorData.error || "You must be linked to this doctor before calling. Please ask the doctor to schedule a meeting or link via QR code.",
                                   variant: "destructive",
                                 });
                               }

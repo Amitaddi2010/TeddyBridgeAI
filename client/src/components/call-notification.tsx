@@ -83,8 +83,23 @@ export function CallNotification() {
   if (!incomingCall) return null;
 
   return (
-    <Dialog open={showCallDialog} onOpenChange={setShowCallDialog}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog 
+      open={showCallDialog} 
+      onOpenChange={(open) => {
+        // Prevent closing by clicking outside or pressing ESC
+        if (!open) {
+          // Only allow closing via buttons
+          return;
+        }
+        setShowCallDialog(open);
+      }}
+    >
+      <DialogContent 
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10">
             <Video className="w-8 h-8 text-primary animate-pulse" />
@@ -97,15 +112,25 @@ export function CallNotification() {
         <DialogFooter className="flex gap-2 sm:gap-0">
           <Button
             variant="destructive"
-            onClick={handleDecline}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleDecline();
+            }}
             className="flex-1"
+            type="button"
           >
             <X className="w-4 h-4 mr-2" />
             Decline
           </Button>
           <Button
-            onClick={handleAccept}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleAccept();
+            }}
             className="flex-1 bg-primary hover:bg-primary/90"
+            type="button"
           >
             <Phone className="w-4 h-4 mr-2" />
             Accept

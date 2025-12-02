@@ -3,49 +3,44 @@
 from django.db import migrations, models
 
 
+def add_fields_safely(apps, schema_editor):
+    """Add fields only if they don't exist (for SQLite compatibility)"""
+    db = schema_editor.connection
+    
+    with db.cursor() as cursor:
+        # Check and add doctor.city
+        cursor.execute("PRAGMA table_info(doctors)")
+        doctor_columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'city' not in doctor_columns:
+            cursor.execute("ALTER TABLE doctors ADD COLUMN city VARCHAR(255) NULL")
+        
+        # Check and add patient fields
+        cursor.execute("PRAGMA table_info(patients)")
+        patient_columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'age' not in patient_columns:
+            cursor.execute("ALTER TABLE patients ADD COLUMN age INTEGER NULL")
+        if 'gender' not in patient_columns:
+            cursor.execute("ALTER TABLE patients ADD COLUMN gender VARCHAR(50) NULL")
+        if 'procedure' not in patient_columns:
+            cursor.execute("ALTER TABLE patients ADD COLUMN procedure VARCHAR(255) NULL")
+        if 'connect_to_peers' not in patient_columns:
+            cursor.execute("ALTER TABLE patients ADD COLUMN connect_to_peers BOOLEAN NOT NULL DEFAULT 0")
+        
+        # Check and add user.username
+        cursor.execute("PRAGMA table_info(users)")
+        user_columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'username' not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN username VARCHAR(100) NULL")
+
+
 class Migration(migrations.Migration):
     dependencies = [
         ("core", "0011_doctorreview"),
     ]
 
     operations = [
-        migrations.AddField(
-            model_name="doctor",
-            name="city",
-            field=models.CharField(blank=True, max_length=255, null=True),
-        ),
-        migrations.AddField(
-            model_name="patient",
-            name="age",
-            field=models.IntegerField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name="patient",
-            name="connect_to_peers",
-            field=models.BooleanField(
-                default=False, help_text="Allow connection with other patients"
-            ),
-        ),
-        migrations.AddField(
-            model_name="patient",
-            name="gender",
-            field=models.CharField(blank=True, max_length=50, null=True),
-        ),
-        migrations.AddField(
-            model_name="patient",
-            name="procedure",
-            field=models.CharField(
-                blank=True,
-                help_text="Medical procedure or treatment",
-                max_length=255,
-                null=True,
-            ),
-        ),
-        migrations.AddField(
-            model_name="user",
-            name="username",
-            field=models.CharField(
-                blank=True, help_text="Display username", max_length=100, null=True
-            ),
-        ),
+        migrations.RunPython(add_fields_safely, migrations.RunPython.noop),
     ]

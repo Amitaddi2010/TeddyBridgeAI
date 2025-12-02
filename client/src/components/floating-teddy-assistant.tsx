@@ -10,6 +10,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { TeddyIcon } from "@/components/teddy-icon";
+import { getApiUrl } from "@/lib/api-config";
 
 interface Message {
   id: string;

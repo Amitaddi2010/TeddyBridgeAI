@@ -215,13 +215,23 @@ export default function Meeting() {
   }, [meetingInfo, isJoined]);
 
   useEffect(() => {
-    if (!isJoined || !meetingInfo?.twilioToken || !meetingInfo?.roomName) return;
+    if (!isJoined || !meetingInfo?.roomName) return;
     if (roomRef.current) return;
+    
+    // Check if Twilio token is available
+    if (!meetingInfo?.twilioToken) {
+      toast({
+        title: "Video Call Unavailable",
+        description: "Twilio credentials are not configured. Please contact support.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     const initCall = async () => {
       try {
-        const room = await TwilioVideo.connect(meetingInfo.twilioToken, {
-          name: meetingInfo.roomName,
+        const room = await TwilioVideo.connect(meetingInfo.twilioToken!, {
+          name: meetingInfo.roomName!,
           audio: true,
           video: false,
         });

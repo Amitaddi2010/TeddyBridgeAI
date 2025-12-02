@@ -432,7 +432,18 @@ export default function Meeting() {
   return (
     <div className="h-screen bg-black flex flex-col">
       <div className="flex-1 relative">
-        <div className="absolute inset-0 flex items-center justify-center">
+        {/* Remote video container */}
+        <div id="remote-video-container" className="absolute inset-0 w-full h-full">
+          {/* Remote video will be inserted here by Twilio */}
+        </div>
+        
+        {/* Local video container (picture-in-picture) */}
+        <div id="local-video-container" className="absolute bottom-20 right-4 w-48 h-36 rounded-lg overflow-hidden border-2 border-white shadow-lg bg-black z-10">
+          {/* Local video will be inserted here by Twilio */}
+        </div>
+        
+        {/* Fallback when no video */}
+        <div className="absolute inset-0 flex items-center justify-center" id="video-fallback">
           <div className="text-center text-white">
             <Avatar className="w-32 h-32 mx-auto mb-4">
               <AvatarFallback className="bg-primary/20 text-primary text-4xl">
@@ -440,8 +451,7 @@ export default function Meeting() {
               </AvatarFallback>
             </Avatar>
             <p className="text-xl font-medium">{getParticipantName()}</p>
-            <p className="text-white/60 mt-2">Audio call in progress</p>
-            <p className="text-sm text-white/40 mt-1">Video requires HTTPS</p>
+            <p className="text-white/60 mt-2">{isVideoOn ? "Video call in progress" : "Audio call in progress"}</p>
           </div>
         </div>
 

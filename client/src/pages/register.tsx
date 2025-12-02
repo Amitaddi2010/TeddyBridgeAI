@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,10 +13,15 @@ import { useAuth } from "@/lib/auth";
 import { Stethoscope, Loader2, User, UserCog } from "lucide-react";
 
 export default function Register() {
-  const [, setLocation] = useLocation();
-  const { register } = useAuth();
+  const [location, setLocation] = useLocation();
+  const { register, user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Get redirect parameter from URL
+  const redirectUrl = typeof window !== 'undefined' 
+    ? new URLSearchParams(window.location.search).get('redirect') 
+    : null;
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -28,6 +33,16 @@ export default function Register() {
     },
   });
 
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    if (user && redirectUrl) {
+      setLocation(redirectUrl);
+    } else if (user) {
+      // Default redirect based on role
+      setLocation(user.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
+    }
+  }, [user, redirectUrl, setLocation]);
+
   const onSubmit = async (data: RegisterInput) => {
     setIsLoading(true);
     try {
@@ -36,6 +51,7 @@ export default function Register() {
         title: "Account created!",
         description: "Welcome to TeddyBridge. Your account has been created successfully.",
       });
+      // Redirect will be handled by useEffect above
     } catch (error) {
       toast({
         title: "Registration failed",

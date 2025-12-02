@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,10 +12,15 @@ import { useAuth } from "@/lib/auth";
 import { Stethoscope, Loader2 } from "lucide-react";
 
 export default function Login() {
-  const [, setLocation] = useLocation();
-  const { login } = useAuth();
+  const [location, setLocation] = useLocation();
+  const { login, user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Get redirect parameter from URL
+  const redirectUrl = typeof window !== 'undefined' 
+    ? new URLSearchParams(window.location.search).get('redirect') 
+    : null;
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -25,6 +30,16 @@ export default function Login() {
     },
   });
 
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    if (user && redirectUrl) {
+      setLocation(redirectUrl);
+    } else if (user) {
+      // Default redirect based on role
+      setLocation(user.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
+    }
+  }, [user, redirectUrl, setLocation]);
+
   const onSubmit = async (data: LoginInput) => {
     setIsLoading(true);
     try {
@@ -33,6 +48,7 @@ export default function Login() {
         title: "Welcome back!",
         description: "You have successfully logged in.",
       });
+      // Redirect will be handled by useEffect above
     } catch (error) {
       toast({
         title: "Login failed",

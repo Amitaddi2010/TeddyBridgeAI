@@ -64,6 +64,14 @@ export default function LinkPatient() {
     },
   });
 
+  // Auto-link when user is authenticated as patient and token is valid
+  useEffect(() => {
+    if (user && user.role === "patient" && tokenInfo?.valid && !tokenInfo?.used && !tokenInfo?.expired && !linkMutation.isPending) {
+      // Automatically link if user just signed up/logged in via QR redirect
+      linkMutation.mutate();
+    }
+  }, [user, tokenInfo, linkMutation]);
+
   const getInitials = (name: string) => {
     return name
       .split(" ")

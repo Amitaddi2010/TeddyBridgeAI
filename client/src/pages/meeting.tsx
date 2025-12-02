@@ -375,10 +375,16 @@ export default function Meeting() {
           }
         }
         
-        // Connect to room with tracks
+        // Connect to room with tracks - suppress WebSocket errors
         const room = await TwilioVideo.connect(meetingInfo.twilioToken!, {
           name: meetingInfo.roomName!,
           tracks: localTracks,
+        }).catch((err: any) => {
+          // Suppress WebSocket connection errors - they're usually transient and Twilio handles retries
+          if (err.message && (err.message.includes('WebSocket') || err.message.includes('wss://'))) {
+            console.warn('Twilio WebSocket connection issue (will retry automatically):', err.message);
+          }
+          throw err; // Re-throw to handle in outer catch
         });
         
         roomRef.current = room;
@@ -451,13 +457,11 @@ export default function Meeting() {
             notifiedParticipantsRef.current.add(participant.identity);
             
             const participantName = getParticipantName();
-            toast({
-              title: "Participant Joined",
-              description: `${participantName} has joined the call.`,
-              duration: 3000,
-            });
             
-            // Notify backend only once
+            // Silent notification - only log to console, don't show toast
+            console.log(`Participant ${participantName} joined the call`);
+            
+            // Notify backend only once (silently)
             notifyParticipantEvent('joined', participantName).catch(console.error);
           }
           
@@ -589,16 +593,12 @@ export default function Meeting() {
             if (wasNotified && participantWasInSet) {
               notifiedParticipantsRef.current.delete(participant.identity);
               
-              // Use setTimeout to avoid state update issues
+              // Silent notification - only log to console, don't show toast
               setTimeout(() => {
                 const participantName = getParticipantName();
-                toast({
-                  title: "Participant Left",
-                  description: `${participantName} has left the call.`,
-                  duration: 3000,
-                });
+                console.log(`Participant ${participantName} left the call`);
                 
-                // Notify backend only once
+                // Notify backend only once (silently)
                 notifyParticipantEvent('left', participantName).catch(console.error);
               }, 100);
             }
@@ -650,14 +650,10 @@ export default function Meeting() {
           }
         });
         
-        // Show connected toast only once
+        // Silent connection - no toast notification to avoid interruptions
         if (!hasShownConnectedToastRef.current) {
           hasShownConnectedToastRef.current = true;
-          toast({
-            title: "Connected",
-            description: isVideoOn ? "Video call connected." : "Audio call connected.",
-            duration: 3000,
-          });
+          console.log(isVideoOn ? "Video call connected." : "Audio call connected.");
         }
         
         // Mark event handlers as attached

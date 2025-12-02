@@ -127,8 +127,11 @@ def get_meeting(request, meeting_id):
         room_name = str(meeting.id)
         token = generate_twilio_token(room_name, request.user.email)
         
-        room_name = str(meeting.id)
-        token = generate_twilio_token(room_name, request.user.email)
+        # If Twilio token generation failed, return None (video calls won't work)
+        if not token:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Twilio token generation failed for meeting {meeting.id}")
         
         return Response({
             'id': str(meeting.id),
@@ -139,7 +142,7 @@ def get_meeting(request, meeting_id):
             'scheduledAt': meeting.scheduled_at.isoformat() if meeting.scheduled_at else None,
             'hasConsented': consent.status == 'granted' if consent else False,
             'isRecording': meeting.status == 'in_progress',
-            'twilioToken': token,
+            'twilioToken': token,  # Will be None if Twilio not configured
             'roomName': room_name,
         })
     except Meeting.DoesNotExist:

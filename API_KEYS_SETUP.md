@@ -28,6 +28,21 @@ Value: your_assemblyai_api_key_here
 (Get from: https://www.assemblyai.com/)
 (Optional - only if using transcription features)
 
+Name: TWILIO_ACCOUNT_SID
+Value: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+(Get from: https://console.twilio.com/)
+(Optional - only if using video calls)
+
+Name: TWILIO_API_KEY
+Value: SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+(Get from: https://console.twilio.com/ → API Keys)
+(Optional - only if using video calls)
+
+Name: TWILIO_API_SECRET
+Value: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+(Get from: https://console.twilio.com/ → API Keys)
+(Optional - only if using video calls)
+
 Name: DJANGO_SECRET_KEY
 Value: (generate at https://djecrety.ir/)
 
@@ -99,6 +114,9 @@ IMPORTANT:
 |----------|----------|-------------|--------------|
 | `GROQ_API_KEY` | ✅ Yes | Groq AI API key | https://console.groq.com/ |
 | `ASSEMBLYAI_API_KEY` | ❌ Optional | AssemblyAI for transcription | https://www.assemblyai.com/ |
+| `TWILIO_ACCOUNT_SID` | ❌ Optional | Twilio Account SID for video calls | https://console.twilio.com/ |
+| `TWILIO_API_KEY` | ❌ Optional | Twilio API Key for video calls | https://console.twilio.com/ |
+| `TWILIO_API_SECRET` | ❌ Optional | Twilio API Secret for video calls | https://console.twilio.com/ |
 | `DJANGO_SECRET_KEY` | ✅ Yes | Django secret key | https://djecrety.ir/ |
 | `DJANGO_DEBUG` | ✅ Yes | Set to `False` | - |
 | `ALLOWED_HOSTS` | ✅ Yes | Your Render URL | `your-app.onrender.com` |

@@ -75,12 +75,12 @@ def get_doctors(request):
         result.append({
             'id': doctor_id_str,  # Doctor model ID (for reviews)
             'userId': doctor_user_id_str,  # User ID (for peer chat)
-            'name': link.doctor.user.name,
+        'name': link.doctor.user.name,
             'email': link.doctor.user.email,
-            'specialty': link.doctor.specialty,
-            'avatar': link.doctor.user.avatar_url,
+        'specialty': link.doctor.specialty,
+        'avatar': link.doctor.user.avatar_url,
             'bio': link.doctor.bio,
-            'linkedAt': link.linked_at.isoformat(),
+        'linkedAt': link.linked_at.isoformat(),
             'avgRating': review_info['avgRating'],
             'reviewCount': review_info['reviewCount'],
             'patientRating': patient_rating,

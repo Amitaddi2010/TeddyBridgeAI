@@ -449,9 +449,49 @@ export default function PatientDoctors() {
                             </div>
                           </DialogContent>
                         </Dialog>
+                        <Button 
+                          size="sm" 
+                          className="w-full gap-1 text-xs sm:text-sm bg-primary hover:bg-primary/90" 
+                          data-testid={`button-call-${doctor.id}`}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(getApiUrl("/meetings"), {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                credentials: "include",
+                                body: JSON.stringify({
+                                  doctorId: doctor.id,
+                                  title: "Video Consultation",
+                                  isImmediate: true,
+                                }),
+                              });
+                              
+                              if (res.ok) {
+                                const data = await res.json();
+                                window.location.href = `/meeting/${data.id}`;
+                              } else {
+                                const error = await res.json();
+                                toast({
+                                  title: "Failed to start call",
+                                  description: error.error || "Please try again",
+                                  variant: "destructive",
+                                });
+                              }
+                            } catch (error) {
+                              toast({
+                                title: "Failed to start call",
+                                description: "Please try again",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                        >
+                          <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
+                          <span className="truncate">Call</span>
+                        </Button>
                         <Link href="/patient/appointments" className="w-full">
-                          <Button size="sm" className="w-full gap-1 text-xs sm:text-sm" data-testid={`button-schedule-${doctor.id}`}>
-                            <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
+                          <Button size="sm" variant="outline" className="w-full gap-1 text-xs sm:text-sm" data-testid={`button-schedule-${doctor.id}`}>
+                            <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
                             <span className="truncate">Schedule</span>
                           </Button>
                         </Link>

@@ -22,41 +22,71 @@ def create_meeting(request):
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
     
-    if request.user.role != 'doctor':
-        return Response({'error': 'Only doctors can create meetings'}, status=status.HTTP_403_FORBIDDEN)
-    
     try:
-        doctor = request.user.doctor_profile
-    except Doctor.DoesNotExist:
-        doctor = Doctor.objects.create(user=request.user)
+        if request.user.role == 'doctor':
+            doctor = request.user.doctor_profile
+            patient_id = request.data.get('patientId')
+            if not patient_id:
+                return Response({'error': 'Patient ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                patient = Patient.objects.get(id=patient_id)
+            except Patient.DoesNotExist:
+                return Response({'error': 'Patient not found'}, status=status.HTTP_404_NOT_FOUND)
+        elif request.user.role == 'patient':
+            patient = request.user.patient_profile
+            doctor_id = request.data.get('doctorId')
+            if not doctor_id:
+                return Response({'error': 'Doctor ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                doctor = Doctor.objects.get(id=doctor_id)
+            except Doctor.DoesNotExist:
+                return Response({'error': 'Doctor not found'}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            return Response({'error': 'Invalid user role'}, status=status.HTTP_403_FORBIDDEN)
+    except (Doctor.DoesNotExist, Patient.DoesNotExist):
+        # Create profile if it doesn't exist
+        if request.user.role == 'doctor':
+            doctor = Doctor.objects.create(user=request.user)
+            patient = Patient.objects.get(id=request.data.get('patientId'))
+        else:
+            patient = Patient.objects.create(user=request.user)
+            doctor = Doctor.objects.get(id=request.data.get('doctorId'))
     
-    patient_id = request.data.get('patientId')
     title = request.data.get('title', 'Video Consultation')
     scheduled_at = request.data.get('scheduledAt')
+    is_immediate = request.data.get('isImmediate', False)
     
-    if not patient_id:
-        return Response({'error': 'Patient ID is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    try:
-        patient = Patient.objects.get(id=patient_id)
-    except Patient.DoesNotExist:
-        return Response({'error': 'Patient not found'}, status=status.HTTP_404_NOT_FOUND)
+    # If immediate call, set status to 'in_progress' and no scheduled time
+    if is_immediate:
+        scheduled_at = None
+        status = 'in_progress'
+    else:
+        status = 'scheduled'
     
     meeting = Meeting.objects.create(
         doctor=doctor,
         patient=patient,
         title=title,
         scheduled_at=scheduled_at,
-        status='scheduled'
+        status=status
     )
     
-    # Create notification for patient
+    # Create notification for the other party
+    if request.user.role == 'doctor':
+        notification_user = patient.user
+        notification_message = f'Dr. {doctor.user.name} is calling you. Click to join the video call.'
+        notification_link = f'/meeting/{meeting.id}'
+    else:
+        notification_user = doctor.user
+        notification_message = f'{patient.user.name} is calling you. Click to join the video call.'
+        notification_link = f'/meeting/{meeting.id}'
+    
     create_notification(
-        user=patient.user,
-        notification_type='appointment',
-        title='New Appointment Scheduled',
-        message=f'Dr. {doctor.user.name} has scheduled an appointment with you for {title}',
-        link=f'/patient/appointments'
+        user=notification_user,
+        notification_type='appointment' if not is_immediate else 'call',
+        title='Incoming Call' if is_immediate else 'New Appointment Scheduled',
+        message=notification_message,
+        link=notification_link
     )
     
     return Response({

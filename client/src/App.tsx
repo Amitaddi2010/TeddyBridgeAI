@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Notifications } from "@/components/notifications";
 import { FloatingTeddyAssistant } from "@/components/floating-teddy-assistant";
+import { CallNotification } from "@/components/call-notification";
 import { Loader2 } from "lucide-react";
 
 import Landing from "@/pages/landing";
@@ -60,6 +61,8 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
         </div>
         {/* Floating AI Assistant - Available on all authenticated pages */}
         <FloatingTeddyAssistant />
+        {/* Call Notification Popup - Shows when someone calls */}
+        <CallNotification />
       </div>
     </SidebarProvider>
   );
@@ -121,6 +124,7 @@ function PublicRoute({ component: Component }: { component: React.ComponentType 
   return <Component />;
 }
 
+
 function Router() {
   return (
     <Switch>
@@ -144,9 +148,9 @@ function Router() {
       <Route path="/patient/doctors" component={() => <ProtectedRoute component={PatientDoctors} allowedRoles={["patient"]} />} />
       <Route path="/patient/appointments" component={() => <ProtectedRoute component={PatientAppointments} allowedRoles={["patient"]} />} />
       
-      <Route path="/meeting/:id" component={Meeting} />
-      <Route path="/link/:token" component={LinkPatient} />
-      <Route path="/survey/:id" component={SurveyResponse} />
+      <Route path="/meeting/:id" component={() => <ProtectedRoute component={Meeting} />} />
+      <Route path="/link/:token" component={() => <ProtectedRoute component={LinkPatient} />} />
+      <Route path="/survey/:id" component={() => <SurveyResponse />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route path="/peer-network" component={() => <ProtectedRoute component={PeerNetwork} />} />
       

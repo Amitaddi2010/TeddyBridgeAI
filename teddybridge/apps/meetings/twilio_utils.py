@@ -36,14 +36,24 @@ def generate_twilio_token(room_name, identity):
     try:
         # Log credential presence (without exposing secrets)
         logger.info(f"Generating Twilio token for room: {room_name}, identity: {sanitized_identity}")
-        logger.debug(f"Account SID present: {bool(account_sid)}, API Key present: {bool(api_key)}, API Secret present: {bool(api_secret)}")
+        logger.info(f"Account SID present: {bool(account_sid)}, API Key present: {bool(api_key)}, API Secret present: {bool(api_secret)}")
+        
+        # Validate Account SID format (should start with AC)
+        if account_sid and not account_sid.startswith('AC'):
+            logger.error(f"Invalid Account SID format: {account_sid[:10]}... (should start with AC)")
+            return None
+        
+        # Validate API Key format (should start with SK)
+        if api_key and not api_key.startswith('SK'):
+            logger.error(f"Invalid API Key format: {api_key[:10]}... (should start with SK)")
+            return None
         
         token = AccessToken(account_sid, api_key, api_secret, identity=sanitized_identity)
         video_grant = VideoGrant(room=room_name)
         token.add_grant(video_grant)
         
         jwt_token = token.to_jwt()
-        logger.info("Twilio token generated successfully")
+        logger.info(f"Twilio token generated successfully (length: {len(jwt_token)})")
         return jwt_token
     except Exception as e:
         logger.error(f"Failed to generate Twilio token: {str(e)}")

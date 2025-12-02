@@ -66,14 +66,14 @@ def get_patients(request):
             unread_count = unread_dict.get(patient_user_id_str, 0)
             
             result.append({
-                'id': str(link.patient.id),
+            'id': str(link.patient.id),
                 'userId': patient_user_id_str,
-                'name': link.patient.user.name,
-                'email': link.patient.user.email,
-                'avatar': link.patient.user.avatar_url,
-                'phone': link.patient.phone,
-                'dateOfBirth': link.patient.date_of_birth.isoformat() if link.patient.date_of_birth else None,
-                'linkedAt': link.linked_at.isoformat(),
+            'name': link.patient.user.name,
+            'email': link.patient.user.email,
+            'avatar': link.patient.user.avatar_url,
+            'phone': link.patient.phone,
+            'dateOfBirth': link.patient.date_of_birth.isoformat() if link.patient.date_of_birth else None,
+            'linkedAt': link.linked_at.isoformat(),
                 'unreadMessageCount': unread_count,
             })
         
@@ -149,11 +149,11 @@ def get_patients_recent(request):
             unread_count = unread_dict.get(patient_user_id_str, 0)
             
             result.append({
-                'id': str(link.patient.id),
+            'id': str(link.patient.id),
                 'userId': patient_user_id_str,
-                'name': link.patient.user.name,
-                'avatar': link.patient.user.avatar_url,
-                'lastVisit': link.linked_at.isoformat(),
+            'name': link.patient.user.name,
+            'avatar': link.patient.user.avatar_url,
+            'lastVisit': link.linked_at.isoformat(),
                 'unreadMessageCount': unread_count,
             })
         

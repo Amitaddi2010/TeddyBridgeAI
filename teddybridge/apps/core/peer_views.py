@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django.db.models import Q
 from django.utils import timezone
 from .models import User, PeerConnection, ChatMessage, PeerMeeting, Post, PostLike, PostComment
+from .notifications import create_notification
 
 @api_view(['GET'])
 def search_peers(request):
@@ -156,8 +157,6 @@ def send_chat_message(request):
     
     # Create notification for receiver with context-aware link
     try:
-        from .notifications import create_notification
-        
         # Determine appropriate link based on receiver's role
         # This ensures patients go to their doctors page, doctors go to their patients page
         # Only same-role messaging (peer-to-peer) goes to peer-network

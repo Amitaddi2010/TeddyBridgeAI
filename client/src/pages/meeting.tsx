@@ -233,39 +233,83 @@ export default function Meeting() {
         const room = await TwilioVideo.connect(meetingInfo.twilioToken!, {
           name: meetingInfo.roomName!,
           audio: true,
-          video: false,
+          video: isVideoOn, // Enable video based on state
         });
         
         roomRef.current = room;
         
+        // Handle existing participants
         room.participants.forEach(participant => {
           participant.tracks.forEach(publication => {
-            if (publication.track && publication.track.kind === 'audio') {
-              const audioElement = publication.track.attach();
-              document.body.appendChild(audioElement);
+            if (publication.track) {
+              const element = publication.track.attach();
+              if (publication.track.kind === 'video') {
+                element.setAttribute('id', `remote-video-${participant.identity}`);
+                const videoContainer = document.getElementById('remote-video-container');
+                if (videoContainer) {
+                  videoContainer.appendChild(element);
+                } else {
+                  document.body.appendChild(element);
+                }
+              } else {
+                document.body.appendChild(element);
+              }
             }
           });
         });
         
+        // Handle new participants
         room.on('participantConnected', participant => {
           participant.tracks.forEach(publication => {
-            if (publication.track && publication.track.kind === 'audio') {
-              const audioElement = publication.track.attach();
-              document.body.appendChild(audioElement);
+            if (publication.track) {
+              const element = publication.track.attach();
+              if (publication.track.kind === 'video') {
+                element.setAttribute('id', `remote-video-${participant.identity}`);
+                const videoContainer = document.getElementById('remote-video-container');
+                if (videoContainer) {
+                  videoContainer.appendChild(element);
+                } else {
+                  document.body.appendChild(element);
+                }
+              } else {
+                document.body.appendChild(element);
+              }
             }
           });
           
           participant.on('trackSubscribed', track => {
-            if (track.kind === 'audio') {
-              const audioElement = track.attach();
-              document.body.appendChild(audioElement);
+            const element = track.attach();
+            if (track.kind === 'video') {
+              element.setAttribute('id', `remote-video-${participant.identity}`);
+              const videoContainer = document.getElementById('remote-video-container');
+              if (videoContainer) {
+                videoContainer.appendChild(element);
+              } else {
+                document.body.appendChild(element);
+              }
+            } else {
+              document.body.appendChild(element);
             }
           });
         });
         
+        // Handle local video track
+        room.localParticipant.videoTracks.forEach(publication => {
+          if (publication.track) {
+            const element = publication.track.attach();
+            element.setAttribute('id', 'local-video');
+            const videoContainer = document.getElementById('local-video-container');
+            if (videoContainer) {
+              videoContainer.appendChild(element);
+            } else {
+              document.body.appendChild(element);
+            }
+          }
+        });
+        
         toast({
           title: "Connected",
-          description: "Audio call connected. Video requires HTTPS.",
+          description: isVideoOn ? "Video call connected." : "Audio call connected.",
         });
       } catch (err: any) {
         console.error('Failed to join call:', err);
@@ -438,11 +482,24 @@ export default function Meeting() {
             variant={isVideoOn ? "secondary" : "destructive"}
             size="icon"
             className="w-14 h-14 rounded-full"
-            onClick={() => {
-              toast({
-                title: "Video Not Available",
-                description: "Video requires HTTPS. Use ngrok or localhost.",
-              });
+            onClick={async () => {
+              if (roomRef.current) {
+                const newVideoState = !isVideoOn;
+                setIsVideoOn(newVideoState);
+                
+                // Toggle video tracks
+                roomRef.current.localParticipant.videoTracks.forEach(publication => {
+                  if (publication.track) {
+                    if (newVideoState) {
+                      publication.track.enable();
+                    } else {
+                      publication.track.disable();
+                    }
+                  }
+                });
+              } else {
+                setIsVideoOn(!isVideoOn);
+              }
             }}
             data-testid="button-toggle-video"
           >

@@ -9,6 +9,7 @@ import { Bot, Send, Loader2, Sparkles, MessageCircle, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { getApiUrl } from "@/lib/api-config";
 
 interface Message {
   id: string;
@@ -38,7 +39,7 @@ export function TeddyAIAssistant({ onClose }: TeddyAIAssistantProps) {
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const res = await fetch("/api/auth/teddy/chat", {
+      const res = await fetch(getApiUrl("/auth/teddy/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

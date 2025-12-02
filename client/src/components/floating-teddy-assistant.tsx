@@ -36,7 +36,7 @@ export function FloatingTeddyAssistant() {
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const res = await fetch("/api/auth/teddy/chat", {
+      const res = await fetch(getApiUrl("/auth/teddy/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

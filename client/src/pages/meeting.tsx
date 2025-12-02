@@ -121,13 +121,13 @@ export default function Meeting() {
       const formData = new FormData();
       formData.append("audio", audioBlob, "recording.webm");
       
-      const res = await fetch(`/api/meetings/${meetingId}/uploadRecording`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
+      // Use apiRequest to ensure correct API URL in production
+      const res = await apiRequest("POST", `/api/meetings/${meetingId}/uploadRecording`, formData);
       
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Upload failed");
+      }
       return res.json();
     },
     onSuccess: () => {

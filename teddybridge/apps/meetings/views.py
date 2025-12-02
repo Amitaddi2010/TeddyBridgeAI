@@ -5,9 +5,12 @@ from django.utils import timezone
 from groq import Groq
 from django.conf import settings
 import os
+import logging
 from teddybridge.apps.core.models import Meeting, Doctor, Patient, RecordingConsent, CallNote
 from teddybridge.apps.core.notifications import create_notification
 from .twilio_utils import generate_twilio_token
+
+logger = logging.getLogger(__name__)
 
 def get_groq_client():
     if settings.GROQ_API_KEY:
@@ -127,11 +130,25 @@ def get_meeting(request, meeting_id):
         room_name = str(meeting.id)
         token = generate_twilio_token(room_name, request.user.email)
         
-        # If Twilio token generation failed, return None (video calls won't work)
+        # If Twilio token generation failed, log detailed error
         if not token:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Twilio token generation failed for meeting {meeting.id}")
+            logger.warning(f"Twilio token generation failed for meeting {meeting.id}, user: {request.user.email}")
+            # Return error details in response for debugging
+            return Response({
+                'id': str(meeting.id),
+                'title': meeting.title,
+                'doctorName': meeting.doctor.user.name,
+                'patientName': meeting.patient.user.name if meeting.patient else None,
+                'status': meeting.status,
+                'scheduledAt': meeting.scheduled_at.isoformat() if meeting.scheduled_at else None,
+                'hasConsented': consent.status == 'granted' if consent else False,
+                'isRecording': meeting.status == 'in_progress',
+                'twilioToken': None,
+                'twilioError': 'Token generation failed. Check server logs and Twilio credentials.',
+                'roomName': room_name,
+            })
+        
+        logger.info(f"Twilio token generated successfully for meeting {meeting.id}")
         
         return Response({
             'id': str(meeting.id),
@@ -142,7 +159,7 @@ def get_meeting(request, meeting_id):
             'scheduledAt': meeting.scheduled_at.isoformat() if meeting.scheduled_at else None,
             'hasConsented': consent.status == 'granted' if consent else False,
             'isRecording': meeting.status == 'in_progress',
-            'twilioToken': token,  # Will be None if Twilio not configured
+            'twilioToken': token,
             'roomName': room_name,
         })
     except Meeting.DoesNotExist:
@@ -201,12 +218,22 @@ def upload_recording(request, meeting_id):
         if 'audio' in request.FILES:
             audio_file = request.FILES['audio']
             
-            aai.settings.api_key = os.getenv('ASSEMBLYAI_API_KEY')
+            assemblyai_key = os.getenv('ASSEMBLYAI_API_KEY')
+            if not assemblyai_key:
+                logger.warning("ASSEMBLYAI_API_KEY not configured, skipping transcription")
+                meeting.status = 'completed'
+                meeting.ended_at = timezone.now()
+                meeting.save()
+                return Response({'success': True, 'message': 'Recording uploaded but transcription skipped (AssemblyAI not configured)'})
+            
+            aai.settings.api_key = assemblyai_key
             transcriber = aai.Transcriber()
             
+            logger.info("Starting transcription with AssemblyAI...")
             transcript = transcriber.transcribe(audio_file)
             
             if transcript.status == aai.TranscriptStatus.completed:
+                logger.info(f"Transcription completed for meeting {meeting_id}, text length: {len(transcript.text)}")
                 meeting.transcript_text = transcript.text
                 meeting.status = 'transcription_pending'
                 meeting.save()
@@ -263,9 +290,12 @@ Provide:
         meeting.ended_at = timezone.now()
         meeting.save()
         
+        logger.info(f"Meeting {meeting_id} marked as completed")
         return Response({'success': True})
     except Exception as e:
-        print(f'Upload recording error: {e}')
+        logger.error(f'Upload recording error for meeting {meeting_id}: {str(e)}')
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])

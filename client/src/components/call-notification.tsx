@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Video, Phone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,12 @@ interface Notification {
 
 export function CallNotification() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [showCallDialog, setShowCallDialog] = useState(false);
   const [incomingCall, setIncomingCall] = useState<Notification | null>(null);
-  const [processedNotificationIds, setProcessedNotificationIds] = useState<Set<string>>(new Set());
+  const processedNotificationIdsRef = useRef<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasShownDialogRef = useRef(false);
 
   const { data } = useQuery({
     queryKey: ["/api/user/notifications/list"],
@@ -38,70 +40,87 @@ export function CallNotification() {
   const notifications: Notification[] = data?.notifications || [];
 
   useEffect(() => {
+    // Only process if dialog is not showing and not processing
+    if (showCallDialog || isProcessing || hasShownDialogRef.current) {
+      return;
+    }
+
     // Find unread call notifications that haven't been processed yet
     const callNotification = notifications.find(
       (n) => 
         !n.isRead && 
         (n.type === "call" || n.title === "Incoming Call") && 
         n.link?.startsWith("/meeting/") &&
-        !processedNotificationIds.has(n.id) &&
-        !isProcessing
+        !processedNotificationIdsRef.current.has(n.id)
     );
 
-    if (callNotification && !showCallDialog) {
+    if (callNotification) {
       setIncomingCall(callNotification);
       setShowCallDialog(true);
-      // Mark as processed to prevent re-triggering
-      setProcessedNotificationIds(prev => new Set(prev).add(callNotification.id));
+      hasShownDialogRef.current = true;
+      // Mark as processed immediately to prevent re-triggering
+      processedNotificationIdsRef.current.add(callNotification.id);
+      
+      // OPTIMISTIC: Mark as read immediately on the client to prevent re-triggering
+      // Then mark as read on the server (don't wait for it)
+      apiRequest("POST", `/api/user/notifications/${callNotification.id}/read`).catch(console.error);
+      // Invalidate query to get updated state
+      queryClient.invalidateQueries({ queryKey: ["/api/user/notifications/list"] });
     }
-  }, [notifications, showCallDialog, processedNotificationIds, isProcessing]);
+  }, [notifications, showCallDialog, isProcessing, queryClient]);
 
   const handleAccept = async () => {
     if (!incomingCall?.link || isProcessing) return;
     
     setIsProcessing(true);
+    const notificationId = incomingCall.id;
+    const link = incomingCall.link;
+    
+    // Clear state immediately to prevent re-triggering
+    setShowCallDialog(false);
+    setIncomingCall(null);
+    hasShownDialogRef.current = false;
+    
     try {
-      // Mark notification as read
-      await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
-      const link = incomingCall.link;
-      // Clear state first
-      setShowCallDialog(false);
-      setIncomingCall(null);
-      // Small delay to ensure state is cleared before navigation
-      setTimeout(() => {
-        setLocation(link);
-      }, 100);
+      // Mark notification as read (already marked optimistically, but ensure it's saved)
+      await apiRequest("POST", `/api/user/notifications/${notificationId}/read`);
+      // Invalidate query to refetch updated notifications
+      queryClient.invalidateQueries({ queryKey: ["/api/user/notifications/list"] });
     } catch (error) {
       console.error("Failed to accept call:", error);
-      // Still navigate even if marking as read fails
-      const link = incomingCall.link;
-      setShowCallDialog(false);
-      setIncomingCall(null);
-      setTimeout(() => {
-        setLocation(link);
-      }, 100);
-    } finally {
-      setIsProcessing(false);
     }
+    
+    setIsProcessing(false);
+    
+    // Navigate to meeting
+    setTimeout(() => {
+      setLocation(link);
+    }, 100);
   };
 
   const handleDecline = async () => {
     if (!incomingCall || isProcessing) return;
     
     setIsProcessing(true);
+    const notificationId = incomingCall.id;
+    
+    // Clear state immediately to prevent re-triggering
+    setShowCallDialog(false);
+    const currentCall = incomingCall;
+    setIncomingCall(null);
+    hasShownDialogRef.current = false;
+    
     try {
-      // Mark notification as read
-      await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
+      // Mark notification as read (already marked optimistically, but ensure it's saved)
+      await apiRequest("POST", `/api/user/notifications/${notificationId}/read`);
+      // Invalidate query to refetch updated notifications
+      queryClient.invalidateQueries({ queryKey: ["/api/user/notifications/list"] });
     } catch (error) {
       console.error("Failed to decline call:", error);
-    } finally {
-      setShowCallDialog(false);
-      setIncomingCall(null);
-      setIsProcessing(false);
     }
+    
+    setIsProcessing(false);
   };
-
-  if (!incomingCall) return null;
 
   if (!incomingCall) return null;
 

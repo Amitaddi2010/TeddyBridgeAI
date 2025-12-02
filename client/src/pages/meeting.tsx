@@ -113,6 +113,8 @@ export default function Meeting() {
   const localVideoTrackRef = useRef<any>(null);
   const localAudioTrackRef = useRef<any>(null);
   const isConnectingRef = useRef<boolean>(false);
+  const notifiedParticipantsRef = useRef<Set<string>>(new Set()); // Track notified participants
+  const trackElementsRef = useRef<Map<string, Set<HTMLElement>>>(new Map()); // Track attached elements
 
   const { data: meetingInfo, isLoading, error } = useQuery<MeetingInfo>({
     queryKey: ["/api/meetings", meetingId],
@@ -367,15 +369,19 @@ export default function Meeting() {
           room.localParticipant.publishTrack(track);
         });
         
-        // Notify that we joined
-        await notifyParticipantEvent('joined', user?.name || 'User');
+        // Don't notify about our own join - we're already in the meeting
         
-        // Handle existing participants
+        // Handle existing participants (don't notify, they were already here)
         room.participants.forEach(participant => {
-          setParticipants(prev => new Set(prev).add(participant.identity));
+          // Only track unique participant identities
+          setParticipants(prev => {
+            const newSet = new Set(prev);
+            newSet.add(participant.identity);
+            return newSet;
+          });
           
           participant.tracks.forEach(publication => {
-            if (publication.track) {
+            if (publication.track && publication.isSubscribed) {
               const element = publication.track.attach();
               if (publication.track.kind === 'video') {
                 element.setAttribute('id', `remote-video-${participant.identity}`);
@@ -390,10 +396,22 @@ export default function Meeting() {
                 } else {
                   document.body.appendChild(element);
                 }
+                
+                // Track this element for cleanup
+                if (!trackElementsRef.current.has(participant.identity)) {
+                  trackElementsRef.current.set(participant.identity, new Set());
+                }
+                trackElementsRef.current.get(participant.identity)?.add(element);
               } else {
                 element.setAttribute('autoplay', 'true');
                 element.setAttribute('playsinline', 'true');
                 document.body.appendChild(element);
+                
+                // Track this element for cleanup
+                if (!trackElementsRef.current.has(participant.identity)) {
+                  trackElementsRef.current.set(participant.identity, new Set());
+                }
+                trackElementsRef.current.get(participant.identity)?.add(element);
               }
             }
           });
@@ -401,16 +419,30 @@ export default function Meeting() {
         
         // Handle new participants joining
         room.on('participantConnected', async (participant) => {
-          setParticipants(prev => new Set(prev).add(participant.identity));
+          // Only notify if this participant hasn't been notified before
+          if (!notifiedParticipantsRef.current.has(participant.identity)) {
+            notifiedParticipantsRef.current.add(participant.identity);
+            
+            const participantName = getParticipantName();
+            toast({
+              title: "Participant Joined",
+              description: `${participantName} has joined the call.`,
+            });
+            
+            // Notify backend only once
+            await notifyParticipantEvent('joined', participantName);
+          }
           
-          const participantName = getParticipantName();
-          toast({
-            title: "Participant Joined",
-            description: `${participantName} has joined the call.`,
+          // Update participant count (only unique identities)
+          setParticipants(prev => {
+            const newSet = new Set(prev);
+            newSet.add(participant.identity);
+            return newSet;
           });
           
+          // Handle existing tracks
           participant.tracks.forEach(publication => {
-            if (publication.track) {
+            if (publication.track && publication.isSubscribed) {
               const element = publication.track.attach();
               if (publication.track.kind === 'video') {
                 element.setAttribute('id', `remote-video-${participant.identity}`);
@@ -425,14 +457,27 @@ export default function Meeting() {
                 } else {
                   document.body.appendChild(element);
                 }
+                
+                // Track this element for cleanup
+                if (!trackElementsRef.current.has(participant.identity)) {
+                  trackElementsRef.current.set(participant.identity, new Set());
+                }
+                trackElementsRef.current.get(participant.identity)?.add(element);
               } else {
                 element.setAttribute('autoplay', 'true');
                 element.setAttribute('playsinline', 'true');
                 document.body.appendChild(element);
+                
+                // Track this element for cleanup
+                if (!trackElementsRef.current.has(participant.identity)) {
+                  trackElementsRef.current.set(participant.identity, new Set());
+                }
+                trackElementsRef.current.get(participant.identity)?.add(element);
               }
             }
           });
           
+          // Handle new tracks being subscribed
           participant.on('trackSubscribed', (track) => {
             const element = track.attach();
             if (track.kind === 'video') {
@@ -448,11 +493,28 @@ export default function Meeting() {
               } else {
                 document.body.appendChild(element);
               }
+              
+              // Track this element for cleanup
+              if (!trackElementsRef.current.has(participant.identity)) {
+                trackElementsRef.current.set(participant.identity, new Set());
+              }
+              trackElementsRef.current.get(participant.identity)?.add(element);
             } else {
               element.setAttribute('autoplay', 'true');
               element.setAttribute('playsinline', 'true');
               document.body.appendChild(element);
+              
+              // Track this element for cleanup
+              if (!trackElementsRef.current.has(participant.identity)) {
+                trackElementsRef.current.set(participant.identity, new Set());
+              }
+              trackElementsRef.current.get(participant.identity)?.add(element);
             }
+          });
+          
+          // Handle track unsubscribed
+          participant.on('trackUnsubscribed', (track) => {
+            track.detach();
           });
         });
         

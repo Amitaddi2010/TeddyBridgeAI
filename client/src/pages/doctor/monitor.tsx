@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getApiUrl } from "@/lib/api-config";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Activity, TrendingUp, FileText, Plus, Download, Loader2 } from "lucide-react";
 
@@ -90,7 +91,7 @@ export default function Monitor() {
 
   const handleDownloadPDF = async (patientId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/doctor/monitor/document/${patientId}`, {
+      const response = await fetch(getApiUrl(`/doctor/monitor/document/${patientId}`), {
         credentials: 'include',
       });
       const blob = await response.blob();

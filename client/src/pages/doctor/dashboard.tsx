@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { getApiUrl } from "@/lib/api-config";
 import { useState, useEffect } from "react";
 
 interface DashboardStats {
@@ -61,7 +62,7 @@ function PatientChatDialog({ patientId, patientName }: { patientId: string; pati
 
   const loadMessages = async () => {
     try {
-      const res = await fetch(`/api/peers/chat/${patientId}`, { credentials: "include" });
+      const res = await fetch(getApiUrl(`/peers/chat/${patientId}`), { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
@@ -76,7 +77,7 @@ function PatientChatDialog({ patientId, patientName }: { patientId: string; pati
     
     setIsLoading(true);
     try {
-      const res = await fetch("/api/peers/chat/send", {
+      const res = await fetch(getApiUrl("/peers/chat/send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

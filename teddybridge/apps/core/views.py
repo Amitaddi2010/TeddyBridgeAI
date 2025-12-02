@@ -278,7 +278,15 @@ def upload_avatar(request):
         for chunk in avatar_file.chunks():
             destination.write(chunk)
     
-    avatar_url = f"http://localhost:8000{settings.MEDIA_URL}avatars/{filename}"
+    # Use environment variable for API base URL, fallback to request host
+    api_base_url = os.getenv('API_BASE_URL', '')
+    if not api_base_url:
+        # Try to get from request
+        scheme = 'https' if request.is_secure() else 'http'
+        host = request.get_host()
+        api_base_url = f"{scheme}://{host}"
+    
+    avatar_url = f"{api_base_url}{settings.MEDIA_URL}avatars/{filename}"
     request.user.avatar_url = avatar_url
     request.user.save()
     

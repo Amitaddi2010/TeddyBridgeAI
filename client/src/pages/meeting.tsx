@@ -279,6 +279,61 @@ export default function Meeting() {
     return meetingInfo.doctorName;
   };
 
+  // Helper function to handle track publication (following Twilio best practices)
+  const trackPublished = (publication: any, participant: any) => {
+    // If track is already available, attach it immediately
+    if (publication.track) {
+      attachTrackToDOM(publication.track, participant.identity);
+    }
+    
+    // Listen for when the track becomes subscribed
+    publication.on('subscribed', (track: any) => {
+      attachTrackToDOM(track, participant.identity);
+    });
+    
+    // Listen for when the track becomes unsubscribed
+    publication.on('unsubscribed', (track: any) => {
+      trackUnsubscribed(track, participant.identity);
+    });
+  };
+  
+  // Helper function to handle track unsubscription
+  const trackUnsubscribed = (track: any, participantIdentity: string) => {
+    try {
+      track.detach();
+      // Remove from tracking
+      const elements = trackElementsRef.current.get(participantIdentity);
+      if (elements) {
+        const trackElements = Array.from(elements);
+        trackElements.forEach(element => {
+          if (element instanceof HTMLVideoElement || element instanceof HTMLAudioElement) {
+            try {
+              element.remove();
+            } catch (e) {
+              console.warn("Error removing track element:", e);
+            }
+          }
+        });
+      }
+      // Also remove by ID
+      if (track.kind === 'video') {
+        const videoElement = document.getElementById(`remote-video-${participantIdentity}`);
+        if (videoElement) videoElement.remove();
+        // Show fallback if no remote video
+        const videoContainer = document.getElementById('remote-video-container');
+        const fallback = document.getElementById('video-fallback');
+        if (videoContainer && videoContainer.children.length === 0 && fallback) {
+          fallback.style.display = 'flex';
+        }
+      } else {
+        const audioElement = document.getElementById(`remote-audio-${participantIdentity}`);
+        if (audioElement) audioElement.remove();
+      }
+    } catch (error) {
+      console.error("Error detaching track:", error);
+    }
+  };
+
   // Helper function to attach track to DOM
   const attachTrackToDOM = (track: any, participantIdentity: string) => {
     try {
@@ -462,16 +517,15 @@ export default function Meeting() {
             return newSet;
           });
           
-          // Handle existing tracks that are already subscribed
+          // Handle existing tracks that are already published
           participant.tracks.forEach(publication => {
-            if (publication.track && publication.isSubscribed) {
-              attachTrackToDOM(publication.track, participant.identity);
-            }
+            trackPublished(publication, participant);
           });
           
-          // Note: Tracks are automatically subscribed when published
-          // We don't need to manually call setSubscribed
-          // Just wait for trackSubscribed events
+          // Listen for tracks that will be published later
+          participant.on('trackPublished', publication => {
+            trackPublished(publication, participant);
+          });
         });
         
         // Handle new participants joining - only attach once
@@ -504,51 +558,14 @@ export default function Meeting() {
             return newSet;
           });
           
-          // Handle existing tracks - attach if already subscribed
+          // Handle existing tracks that are already published
           participant.tracks.forEach((publication: any) => {
-            if (publication.track && publication.isSubscribed) {
-              attachTrackToDOM(publication.track, participant.identity);
-            }
+            trackPublished(publication, participant);
           });
           
-          // Handle new tracks being subscribed (tracks auto-subscribe when published)
-          participant.on('trackSubscribed', (track: any) => {
-            attachTrackToDOM(track, participant.identity);
-          });
-          
-          // Handle track unsubscribed - properly detach and clean up
-          participant.on('trackUnsubscribed', (track: any) => {
-            track.detach();
-            // Remove from tracking
-            const elements = trackElementsRef.current.get(participant.identity);
-            if (elements) {
-              const trackElements = Array.from(elements);
-              trackElements.forEach(element => {
-                if (element instanceof HTMLVideoElement || element instanceof HTMLAudioElement) {
-                  try {
-                    element.remove();
-                  } catch (e) {
-                    console.warn("Error removing track element:", e);
-                  }
-                }
-              });
-            }
-            // Also remove by ID
-            if (track.kind === 'video') {
-              const videoElement = document.getElementById(`remote-video-${participant.identity}`);
-              if (videoElement) videoElement.remove();
-            } else {
-              const audioElement = document.getElementById(`remote-audio-${participant.identity}`);
-              if (audioElement) audioElement.remove();
-            }
-          });
-          
-          // Handle track published events for this participant
-          // Note: When a track is published, it's automatically subscribed
-          // We just need to wait for the trackSubscribed event
+          // Listen for tracks that will be published later
           participant.on('trackPublished', (publication: any) => {
-            // Track will be automatically subscribed, trackSubscribed event will fire
-            console.log(`Track published: ${publication.trackName} (${publication.kind})`);
+            trackPublished(publication, participant);
           });
         };
         

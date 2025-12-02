@@ -134,7 +134,7 @@ export default function Login() {
 
             <div className="mt-6 text-center text-sm">
               <span className="text-muted-foreground">Don't have an account? </span>
-              <Link href="/register">
+              <Link href={redirectUrl ? `/register?redirect=${encodeURIComponent(redirectUrl)}` : "/register"}>
                 <span className="text-primary font-medium cursor-pointer hover:underline" data-testid="link-register">
                   Create one
                 </span>

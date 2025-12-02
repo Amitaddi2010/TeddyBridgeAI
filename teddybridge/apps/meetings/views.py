@@ -221,6 +221,50 @@ def update_consent(request, meeting_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+def participant_event(request, meeting_id):
+    """Handle participant join/leave events and send notifications"""
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        meeting = Meeting.objects.select_related('doctor__user', 'patient__user').get(id=meeting_id)
+        event = request.data.get('event')  # 'joined' or 'left'
+        participant_name = request.data.get('participantName', request.user.name)
+        
+        # Determine the other party
+        if request.user.role == 'doctor':
+            other_user = meeting.patient.user
+            other_name = meeting.patient.user.name
+        else:
+            other_user = meeting.doctor.user
+            other_name = f"Dr. {meeting.doctor.user.name}"
+        
+        # Create notification for the other party
+        if event == 'joined':
+            create_notification(
+                user=other_user,
+                notification_type='call',
+                title='Participant Joined',
+                message=f'{participant_name} has joined the call.',
+                link=f'/meeting/{meeting.id}'
+            )
+        elif event == 'left':
+            create_notification(
+                user=other_user,
+                notification_type='call',
+                title='Participant Left',
+                message=f'{participant_name} has left the call.',
+                link=f'/meeting/{meeting.id}'
+            )
+        
+        return Response({'success': True})
+    except Meeting.DoesNotExist:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error in participant_event: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
 def start_recording(request, meeting_id):
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)

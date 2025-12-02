@@ -3,6 +3,8 @@ from twilio.jwt.access_token.grants import VideoGrant
 import os
 import logging
 import re
+import time
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,14 @@ def generate_twilio_token(room_name, identity):
     # Ensure identity is not empty and not too long (max 128 chars)
     if not sanitized_identity:
         sanitized_identity = 'user_' + str(hash(identity))[:20]
+    
+    # Add timestamp and UUID suffix to make identity unique per connection
+    # This prevents "duplicate identity" errors when the same user tries to reconnect
+    timestamp = str(int(time.time() * 1000))[-8:]  # Last 8 digits of timestamp
+    unique_id = str(uuid.uuid4())[:8]  # First 8 characters of UUID
+    sanitized_identity = f"{sanitized_identity}_{timestamp}_{unique_id}"
+    
+    # Truncate to 128 chars max (Twilio limit)
     sanitized_identity = sanitized_identity[:128]
     
     try:

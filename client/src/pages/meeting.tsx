@@ -86,6 +86,7 @@ export default function Meeting() {
   const roomRef = useRef<any>(null);
   const localVideoTrackRef = useRef<any>(null);
   const localAudioTrackRef = useRef<any>(null);
+  const isConnectingRef = useRef<boolean>(false);
 
   const { data: meetingInfo, isLoading, error } = useQuery<MeetingInfo>({
     queryKey: ["/api/meetings", meetingId],
@@ -252,6 +253,7 @@ export default function Meeting() {
   useEffect(() => {
     if (!isJoined || !meetingInfo?.roomName) return;
     if (roomRef.current) return;
+    if (isConnectingRef.current) return; // Prevent multiple simultaneous connection attempts
     
     // Check if Twilio token is available
     if (!meetingInfo?.twilioToken) {
@@ -264,7 +266,37 @@ export default function Meeting() {
     }
     
     const initCall = async () => {
+      // Mark as connecting to prevent duplicate attempts
+      isConnectingRef.current = true;
+      
       try {
+        // Clean up any existing connection first
+        if (roomRef.current) {
+          try {
+            roomRef.current.disconnect();
+          } catch (err) {
+            console.error("Error disconnecting existing room:", err);
+          }
+          roomRef.current = null;
+        }
+        
+        // Clean up any existing local tracks
+        if (localVideoTrackRef.current) {
+          try {
+            localVideoTrackRef.current.stop();
+          } catch (err) {
+            console.error("Error stopping video track:", err);
+          }
+          localVideoTrackRef.current = null;
+        }
+        if (localAudioTrackRef.current) {
+          try {
+            localAudioTrackRef.current.stop();
+          } catch (err) {
+            console.error("Error stopping audio track:", err);
+          }
+          localAudioTrackRef.current = null;
+        }
         // Create local audio and video tracks
         const localTracks: any[] = [];
         

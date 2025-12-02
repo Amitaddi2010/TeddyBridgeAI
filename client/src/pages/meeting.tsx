@@ -406,39 +406,17 @@ export default function Meeting() {
             return newSet;
           });
           
+          // Handle existing tracks that are already subscribed
           participant.tracks.forEach(publication => {
             if (publication.track && publication.isSubscribed) {
-              const element = publication.track.attach();
-              if (publication.track.kind === 'video') {
-                element.setAttribute('id', `remote-video-${participant.identity}`);
-                element.style.width = '100%';
-                element.style.height = '100%';
-                element.style.objectFit = 'cover';
-                const videoContainer = document.getElementById('remote-video-container');
-                const fallback = document.getElementById('video-fallback');
-                if (videoContainer) {
-                  videoContainer.appendChild(element);
-                  if (fallback) fallback.style.display = 'none';
-                } else {
-                  document.body.appendChild(element);
-                }
-                
-                // Track this element for cleanup
-                if (!trackElementsRef.current.has(participant.identity)) {
-                  trackElementsRef.current.set(participant.identity, new Set());
-                }
-                trackElementsRef.current.get(participant.identity)?.add(element);
-              } else {
-                element.setAttribute('autoplay', 'true');
-                element.setAttribute('playsinline', 'true');
-                document.body.appendChild(element);
-                
-                // Track this element for cleanup
-                if (!trackElementsRef.current.has(participant.identity)) {
-                  trackElementsRef.current.set(participant.identity, new Set());
-                }
-                trackElementsRef.current.get(participant.identity)?.add(element);
-              }
+              attachTrackToDOM(publication.track, participant.identity);
+            }
+          });
+          
+          // Subscribe to tracks that aren't subscribed yet
+          participant.tracks.forEach(publication => {
+            if (!publication.isSubscribed) {
+              publication.setSubscribed(true);
             }
           });
         });
@@ -473,81 +451,57 @@ export default function Meeting() {
             return newSet;
           });
           
-          // Handle existing tracks
+          // Handle existing tracks - subscribe and attach
           participant.tracks.forEach((publication: any) => {
             if (publication.track && publication.isSubscribed) {
-              const element = publication.track.attach();
-              if (publication.track.kind === 'video') {
-                element.setAttribute('id', `remote-video-${participant.identity}`);
-                element.style.width = '100%';
-                element.style.height = '100%';
-                element.style.objectFit = 'cover';
-                const videoContainer = document.getElementById('remote-video-container');
-                const fallback = document.getElementById('video-fallback');
-                if (videoContainer) {
-                  videoContainer.appendChild(element);
-                  if (fallback) fallback.style.display = 'none';
-                } else {
-                  document.body.appendChild(element);
-                }
-                
-                // Track this element for cleanup
-                if (!trackElementsRef.current.has(participant.identity)) {
-                  trackElementsRef.current.set(participant.identity, new Set());
-                }
-                trackElementsRef.current.get(participant.identity)?.add(element);
-              } else {
-                element.setAttribute('autoplay', 'true');
-                element.setAttribute('playsinline', 'true');
-                document.body.appendChild(element);
-                
-                // Track this element for cleanup
-                if (!trackElementsRef.current.has(participant.identity)) {
-                  trackElementsRef.current.set(participant.identity, new Set());
-                }
-                trackElementsRef.current.get(participant.identity)?.add(element);
-              }
+              attachTrackToDOM(publication.track, participant.identity);
+            } else if (publication.track && !publication.isSubscribed) {
+              // Subscribe to track if not already subscribed
+              publication.setSubscribed(true);
+            }
+          });
+          
+          // Subscribe to all available tracks
+          participant.tracks.forEach((publication: any) => {
+            if (!publication.isSubscribed) {
+              publication.setSubscribed(true);
             }
           });
           
           // Handle new tracks being subscribed
           participant.on('trackSubscribed', (track: any) => {
-            const element = track.attach();
+            attachTrackToDOM(track, participant.identity);
+          });
+          
+          // Handle track unsubscribed - properly detach and clean up
+          participant.on('trackUnsubscribed', (track: any) => {
+            track.detach();
+            // Remove from tracking
+            const elements = trackElementsRef.current.get(participant.identity);
+            if (elements) {
+              const trackElements = Array.from(elements);
+              trackElements.forEach(element => {
+                if (element instanceof HTMLVideoElement || element instanceof HTMLAudioElement) {
+                  try {
+                    element.remove();
+                  } catch (e) {
+                    console.warn("Error removing track element:", e);
+                  }
+                }
+              });
+            }
+            // Also remove by ID
             if (track.kind === 'video') {
-              element.setAttribute('id', `remote-video-${participant.identity}`);
-              element.style.width = '100%';
-              element.style.height = '100%';
-              element.style.objectFit = 'cover';
-              const videoContainer = document.getElementById('remote-video-container');
-              const fallback = document.getElementById('video-fallback');
-              if (videoContainer) {
-                videoContainer.appendChild(element);
-                if (fallback) fallback.style.display = 'none';
-              } else {
-                document.body.appendChild(element);
-              }
-              
-              // Track this element for cleanup
-              if (!trackElementsRef.current.has(participant.identity)) {
-                trackElementsRef.current.set(participant.identity, new Set());
-              }
-              trackElementsRef.current.get(participant.identity)?.add(element);
-            } else {
-              element.setAttribute('autoplay', 'true');
-              element.setAttribute('playsinline', 'true');
-              document.body.appendChild(element);
-              
-              // Track this element for cleanup
-              if (!trackElementsRef.current.has(participant.identity)) {
-                trackElementsRef.current.set(participant.identity, new Set());
-              }
-              trackElementsRef.current.get(participant.identity)?.add(element);
+              const videoElement = document.getElementById(`remote-video-${participant.identity}`);
+              if (videoElement) videoElement.remove();
             }
           });
           
-          // Handle track unsubscribed
-          participant.on('trackUnsubscribed', (track: any) => {
-            track.detach();
+          // Handle track published events for this participant
+          participant.on('trackPublished', (publication: any) => {
+            if (publication.track) {
+              publication.setSubscribed(true);
+            }
           });
         };
         
@@ -619,34 +573,57 @@ export default function Meeting() {
         participantDisconnectedHandlerRef.current = participantDisconnectedHandler;
         room.on('participantDisconnected', participantDisconnectedHandler);
         
-        // Handle local video track
-        room.localParticipant.videoTracks.forEach(publication => {
-          if (publication.track) {
-            const element = publication.track.attach();
+        // Helper function to attach local video to DOM
+        const attachLocalVideo = (track: any) => {
+          try {
+            // Remove existing local video element
+            const existingVideo = document.getElementById('local-video');
+            if (existingVideo) existingVideo.remove();
+            
+            const element = track.attach();
             element.setAttribute('id', 'local-video');
             element.style.width = '100%';
             element.style.height = '100%';
             element.style.objectFit = 'cover';
+            
             const videoContainer = document.getElementById('local-video-container');
             if (videoContainer) {
               videoContainer.appendChild(element);
             } else {
               document.body.appendChild(element);
             }
+          } catch (error) {
+            console.error("Error attaching local video:", error);
+          }
+        };
+        
+        // Handle existing local video tracks
+        room.localParticipant.videoTracks.forEach(publication => {
+          if (publication.track) {
+            attachLocalVideo(publication.track);
           }
         });
         
-        // Handle track published events
-        room.localParticipant.on('trackPublished', (publication) => {
-          if (publication.track && publication.track.kind === 'video') {
-            const element = publication.track.attach();
-            element.setAttribute('id', 'local-video');
-            element.style.width = '100%';
-            element.style.height = '100%';
-            element.style.objectFit = 'cover';
-            const videoContainer = document.getElementById('local-video-container');
-            if (videoContainer) {
-              videoContainer.appendChild(element);
+        // Handle local video track published events
+        room.localParticipant.on('trackPublished', (publication: any) => {
+          if (publication.track) {
+            if (publication.track.kind === 'video') {
+              attachLocalVideo(publication.track);
+            } else if (publication.track.kind === 'audio') {
+              // Audio tracks don't need visual attachment, they play automatically
+              console.log("Local audio track published");
+            }
+          }
+        });
+        
+        // Handle local track unpublished events
+        room.localParticipant.on('trackUnpublished', (publication: any) => {
+          if (publication.track) {
+            if (publication.track.kind === 'video') {
+              const videoElement = document.getElementById('local-video');
+              if (videoElement) {
+                videoElement.remove();
+              }
             }
           }
         });
@@ -928,28 +905,36 @@ export default function Meeting() {
             className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
             onClick={async () => {
               const newMutedState = !isMuted;
-              setIsMuted(newMutedState);
               
-              // Handle local audio track ref
-              if (localAudioTrackRef.current) {
-                if (newMutedState) {
-                  localAudioTrackRef.current.disable();
-                } else {
-                  localAudioTrackRef.current.enable();
+              try {
+                // Handle local audio track ref
+                if (localAudioTrackRef.current) {
+                  if (newMutedState) {
+                    localAudioTrackRef.current.disable();
+                  } else {
+                    localAudioTrackRef.current.enable();
+                  }
                 }
-              }
-              
-              // Handle published audio tracks
-              if (roomRef.current) {
-                roomRef.current.localParticipant.audioTracks.forEach(publication => {
-                  if (publication.track) {
-                    if (newMutedState) {
-                      publication.track.disable();
-                    } else {
-                      publication.track.enable();
+                
+                // Handle published audio tracks
+                if (roomRef.current) {
+                  const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
+                  for (const publication of audioPublications) {
+                    if (publication.track) {
+                      if (newMutedState) {
+                        publication.track.disable();
+                      } else {
+                        publication.track.enable();
+                      }
                     }
                   }
-                });
+                }
+                
+                setIsMuted(newMutedState);
+              } catch (err: any) {
+                console.error("Failed to toggle mute:", err);
+                // Revert state on error
+                setIsMuted(!newMutedState);
               }
             }}
             data-testid="button-toggle-mic"
@@ -972,71 +957,107 @@ export default function Meeting() {
               try {
                 if (newVideoState) {
                   // Enable video - create and publish track
-                  if (!localVideoTrackRef.current) {
-                    const videoTrack = await TwilioVideo.createLocalVideoTrack({
-                      width: 1280,
-                      height: 720,
-                    });
-                    localVideoTrackRef.current = videoTrack;
-                    roomRef.current.localParticipant.publishTrack(videoTrack);
-                    
-                    // Attach to UI
-                    const element = videoTrack.attach();
-                    element.setAttribute('id', 'local-video');
-                    element.style.width = '100%';
-                    element.style.height = '100%';
-                    element.style.objectFit = 'cover';
-                    const videoContainer = document.getElementById('local-video-container');
-                    if (videoContainer) {
-                      // Remove any existing video element first
-                      const existingVideo = videoContainer.querySelector('#local-video');
-                      if (existingVideo) existingVideo.remove();
-                      videoContainer.appendChild(element);
-                    }
-                  } else {
-                    // Re-enable existing track
-                    localVideoTrackRef.current.enable();
-                    roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
-                    
-                    // Re-attach to UI if needed
-                    const videoContainer = document.getElementById('local-video-container');
-                    if (videoContainer && !videoContainer.querySelector('#local-video')) {
-                      const element = localVideoTrackRef.current.attach();
+                  try {
+                    if (!localVideoTrackRef.current) {
+                      // Create new video track
+                      const videoTrack = await TwilioVideo.createLocalVideoTrack({
+                        width: 1280,
+                        height: 720,
+                      });
+                      localVideoTrackRef.current = videoTrack;
+                      
+                      // Publish track
+                      await roomRef.current.localParticipant.publishTrack(videoTrack);
+                      
+                      // Wait a bit for publication to complete
+                      await new Promise(resolve => setTimeout(resolve, 100));
+                      
+                      // Attach to UI
+                      const element = videoTrack.attach();
                       element.setAttribute('id', 'local-video');
                       element.style.width = '100%';
                       element.style.height = '100%';
                       element.style.objectFit = 'cover';
-                      videoContainer.appendChild(element);
+                      
+                      const videoContainer = document.getElementById('local-video-container');
+                      if (videoContainer) {
+                        // Remove any existing video element first
+                        const existingVideo = videoContainer.querySelector('#local-video');
+                        if (existingVideo) existingVideo.remove();
+                        videoContainer.appendChild(element);
+                      }
+                    } else {
+                      // Re-enable existing track
+                      localVideoTrackRef.current.enable();
+                      
+                      // Check if already published
+                      const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
+                        .some(pub => pub.track === localVideoTrackRef.current);
+                      
+                      if (!isPublished) {
+                        await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                      }
+                      
+                      // Re-attach to UI if needed
+                      const videoContainer = document.getElementById('local-video-container');
+                      if (!videoContainer?.querySelector('#local-video')) {
+                        const element = localVideoTrackRef.current.attach();
+                        element.setAttribute('id', 'local-video');
+                        element.style.width = '100%';
+                        element.style.height = '100%';
+                        element.style.objectFit = 'cover';
+                        if (videoContainer) {
+                          videoContainer.appendChild(element);
+                        }
+                      }
                     }
+                    setIsVideoOn(true);
+                  } catch (err: any) {
+                    console.error("Failed to enable video:", err);
+                    setIsVideoOn(false);
+                    throw err;
                   }
-                  setIsVideoOn(true);
                 } else {
                   // Disable video - unpublish and disable track
-                  if (localVideoTrackRef.current) {
-                    localVideoTrackRef.current.disable();
-                    roomRef.current.localParticipant.videoTracks.forEach(publication => {
-                      if (publication.track === localVideoTrackRef.current) {
-                        roomRef.current.localParticipant.unpublishTrack(publication.track);
+                  try {
+                    if (localVideoTrackRef.current) {
+                      // Disable track first
+                      localVideoTrackRef.current.disable();
+                      
+                      // Unpublish all video tracks matching this one
+                      const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
+                      for (const publication of videoPublications) {
+                        if (publication.track === localVideoTrackRef.current) {
+                          await roomRef.current.localParticipant.unpublishTrack(publication.track);
+                        }
                       }
-                    });
+                      
+                      // Remove video element from UI
+                      const videoContainer = document.getElementById('local-video-container');
+                      const videoElement = videoContainer?.querySelector('#local-video');
+                      if (videoElement) {
+                        videoElement.remove();
+                      }
+                      
+                      // Detach track
+                      localVideoTrackRef.current.detach();
+                    }
                     
-                    // Remove video element from UI
-                    const videoContainer = document.getElementById('local-video-container');
-                    const videoElement = videoContainer?.querySelector('#local-video');
-                    if (videoElement) {
-                      videoElement.remove();
+                    // Also handle any other published video tracks
+                    const allVideoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
+                    for (const publication of allVideoPublications) {
+                      if (publication.track && publication.track !== localVideoTrackRef.current) {
+                        await roomRef.current.localParticipant.unpublishTrack(publication.track);
+                        publication.track.stop();
+                      }
                     }
+                    
+                    setIsVideoOn(false);
+                  } catch (err: any) {
+                    console.error("Failed to disable video:", err);
+                    setIsVideoOn(true); // Revert state on error
                   }
-                  
-                  // Also handle any other published video tracks
-                  roomRef.current.localParticipant.videoTracks.forEach(publication => {
-                    if (publication.track && publication.track !== localVideoTrackRef.current) {
-                      roomRef.current.localParticipant.unpublishTrack(publication.track);
-                      publication.track.stop();
-                    }
-                  });
-                  
-                  setIsVideoOn(false);
                 }
               } catch (err: any) {
                 console.error("Failed to toggle video:", err);
@@ -1219,26 +1240,33 @@ export default function Meeting() {
                 size="sm"
                 onClick={async () => {
                   const newMutedState = !isMuted;
-                  setIsMuted(newMutedState);
                   
-                  if (localAudioTrackRef.current) {
-                    if (newMutedState) {
-                      localAudioTrackRef.current.disable();
-                    } else {
-                      localAudioTrackRef.current.enable();
+                  try {
+                    if (localAudioTrackRef.current) {
+                      if (newMutedState) {
+                        localAudioTrackRef.current.disable();
+                      } else {
+                        localAudioTrackRef.current.enable();
+                      }
                     }
-                  }
-                  
-                  if (roomRef.current) {
-                    roomRef.current.localParticipant.audioTracks.forEach(publication => {
-                      if (publication.track) {
-                        if (newMutedState) {
-                          publication.track.disable();
-                        } else {
-                          publication.track.enable();
+                    
+                    if (roomRef.current) {
+                      const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
+                      for (const publication of audioPublications) {
+                        if (publication.track) {
+                          if (newMutedState) {
+                            publication.track.disable();
+                          } else {
+                            publication.track.enable();
+                          }
                         }
                       }
-                    });
+                    }
+                    
+                    setIsMuted(newMutedState);
+                  } catch (err: any) {
+                    console.error("Failed to toggle mute:", err);
+                    setIsMuted(!newMutedState);
                   }
                 }}
               >

@@ -279,6 +279,60 @@ export default function Meeting() {
     return meetingInfo.doctorName;
   };
 
+  // Helper function to attach track to DOM
+  const attachTrackToDOM = (track: any, participantIdentity: string) => {
+    try {
+      // Remove any existing elements for this track
+      if (track.kind === 'video') {
+        const existingVideo = document.getElementById(`remote-video-${participantIdentity}`);
+        if (existingVideo) existingVideo.remove();
+      } else {
+        const existingAudio = document.getElementById(`remote-audio-${participantIdentity}`);
+        if (existingAudio) existingAudio.remove();
+      }
+      
+      const element = track.attach();
+      
+      if (track.kind === 'video') {
+        element.setAttribute('id', `remote-video-${participantIdentity}`);
+        element.style.width = '100%';
+        element.style.height = '100%';
+        element.style.objectFit = 'cover';
+        
+        const videoContainer = document.getElementById('remote-video-container');
+        const fallback = document.getElementById('video-fallback');
+        
+        if (videoContainer) {
+          videoContainer.appendChild(element);
+          if (fallback) fallback.style.display = 'none';
+        } else {
+          document.body.appendChild(element);
+        }
+      } else {
+        // Audio track
+        element.setAttribute('id', `remote-audio-${participantIdentity}`);
+        element.setAttribute('autoplay', 'true');
+        element.setAttribute('playsinline', 'true');
+        element.setAttribute('muted', 'false');
+        // Try to play the audio element
+        if (element instanceof HTMLAudioElement) {
+          element.play().catch(err => {
+            console.warn("Could not autoplay audio:", err);
+          });
+        }
+        document.body.appendChild(element);
+      }
+      
+      // Track this element for cleanup
+      if (!trackElementsRef.current.has(participantIdentity)) {
+        trackElementsRef.current.set(participantIdentity, new Set());
+      }
+      trackElementsRef.current.get(participantIdentity)?.add(element);
+    } catch (error) {
+      console.error("Error attaching track to DOM:", error);
+    }
+  };
+
   // Send notification when participant joins/leaves
   const notifyParticipantEvent = async (event: 'joined' | 'left', participantName: string) => {
     try {

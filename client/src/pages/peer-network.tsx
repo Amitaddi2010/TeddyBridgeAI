@@ -9,6 +9,7 @@ import { Heart, MessageCircle, Send, Users, Calendar, Trash2 } from "lucide-reac
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { getApiUrl } from "@/lib/api-config";
 
 function ChatDialog({ peerId, peerName }: { peerId: string; peerName: string }) {
   const { user } = useAuth();
@@ -16,14 +17,14 @@ function ChatDialog({ peerId, peerName }: { peerId: string; peerName: string }) 
   const [newMessage, setNewMessage] = useState("");
 
   const loadMessages = async () => {
-    const res = await fetch(`/api/peers/chat/${peerId}`, { credentials: "include" });
+    const res = await fetch(getApiUrl(`/peers/chat/${peerId}`), { credentials: "include" });
     const data = await res.json();
     setMessages(data);
   };
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
-    const res = await fetch("/api/peers/chat/send", {
+    const res = await fetch(getApiUrl("/peers/chat/send"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -75,7 +76,7 @@ function ScheduleDialog({ peerId, peerName }: { peerId: string; peerName: string
 
   const createMeeting = async () => {
     if (!title || !scheduledAt) return;
-    const res = await fetch("/api/peers/meetings/create", {
+    const res = await fetch(getApiUrl("/peers/meetings/create"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

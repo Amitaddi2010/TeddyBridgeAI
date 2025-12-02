@@ -51,7 +51,7 @@ function DoctorChatDialog({ doctorId, doctorName }: { doctorId: string; doctorNa
 
   const loadMessages = async () => {
     try {
-      const res = await fetch(`/api/peers/chat/${doctorId}`, { credentials: "include" });
+      const res = await fetch(getApiUrl(`/peers/chat/${doctorId}`), { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
@@ -66,7 +66,7 @@ function DoctorChatDialog({ doctorId, doctorName }: { doctorId: string; doctorNa
     
     setIsLoading(true);
     try {
-      const res = await fetch("/api/peers/chat/send", {
+      const res = await fetch(getApiUrl("/peers/chat/send"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

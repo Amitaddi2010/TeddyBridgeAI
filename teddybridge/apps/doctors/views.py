@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from datetime import timedelta
 import secrets
+import os
 import qrcode
 import io
 import base64
@@ -207,7 +208,15 @@ def generate_qr(request):
         QRToken.objects.create(doctor=doctor, token=token, expires_at=expires_at)
         
         qr = qrcode.QRCode(version=1, box_size=10, border=2)
-        link_url = f"http://localhost:5173/link/{token}"
+        # Use environment variable for frontend URL, fallback to production or localhost
+        frontend_url = os.getenv('FRONTEND_URL', '')
+        if not frontend_url:
+            # In production, use Vercel URL; in development, use localhost
+            if not request.get_host().startswith('localhost') and not request.get_host().startswith('127.0.0.1'):
+                frontend_url = os.getenv('VITE_FRONTEND_URL', 'https://teddy-bridge-ai.vercel.app')
+            else:
+                frontend_url = 'http://localhost:5173'
+        link_url = f"{frontend_url}/link/{token}"
         qr.add_data(link_url)
         qr.make(fit=True)
         

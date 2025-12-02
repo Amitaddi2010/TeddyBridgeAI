@@ -11,7 +11,6 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Notifications } from "@/components/notifications";
 import { FloatingTeddyAssistant } from "@/components/floating-teddy-assistant";
-import { CallNotification } from "@/components/call-notification";
 import { Loader2 } from "lucide-react";
 
 import Landing from "@/pages/landing";
@@ -61,8 +60,6 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
         </div>
         {/* Floating AI Assistant - Available on all authenticated pages */}
         <FloatingTeddyAssistant />
-        {/* Call Notification Popup - Shows when someone calls */}
-        <CallNotification />
       </div>
     </SidebarProvider>
   );

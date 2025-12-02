@@ -444,10 +444,12 @@ export default function Meeting() {
         
         roomRef.current = room;
         
-        // Publish local tracks
-        localTracks.forEach(track => {
-          room.localParticipant.publishTrack(track);
-        });
+        // Publish local tracks and ensure they're available for subscription
+        for (const track of localTracks) {
+          await room.localParticipant.publishTrack(track);
+          // Small delay to ensure publication completes
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
         
         // Don't notify about our own join - we're already in the meeting
         

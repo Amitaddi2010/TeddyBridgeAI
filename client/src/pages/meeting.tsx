@@ -282,6 +282,7 @@ export default function Meeting() {
     if (!isJoined || !meetingInfo?.roomName) return;
     if (roomRef.current) return;
     if (isConnectingRef.current) return; // Prevent multiple simultaneous connection attempts
+    if (eventHandlersAttachedRef.current) return; // Prevent re-attaching handlers
     
     // Check if Twilio token is available
     if (!meetingInfo?.twilioToken) {
@@ -417,8 +418,16 @@ export default function Meeting() {
           });
         });
         
-        // Handle new participants joining
-        room.on('participantConnected', async (participant) => {
+        // Handle new participants joining - only attach once
+        const participantConnectedHandler = async (participant: any) => {
+          // Throttle notifications - only show if not shown in last 2 seconds
+          const now = Date.now();
+          const lastNotification = notificationThrottleRef.current.get(`joined-${participant.identity}`);
+          if (lastNotification && (now - lastNotification) < 2000) {
+            return; // Skip duplicate notification
+          }
+          notificationThrottleRef.current.set(`joined-${participant.identity}`, now);
+          
           // Only notify if this participant hasn't been notified before
           if (!notifiedParticipantsRef.current.has(participant.identity)) {
             notifiedParticipantsRef.current.add(participant.identity);
@@ -427,10 +436,11 @@ export default function Meeting() {
             toast({
               title: "Participant Joined",
               description: `${participantName} has joined the call.`,
+              duration: 3000,
             });
             
             // Notify backend only once
-            await notifyParticipantEvent('joined', participantName);
+            notifyParticipantEvent('joined', participantName).catch(console.error);
           }
           
           // Update participant count (only unique identities)
@@ -441,7 +451,7 @@ export default function Meeting() {
           });
           
           // Handle existing tracks
-          participant.tracks.forEach(publication => {
+          participant.tracks.forEach((publication: any) => {
             if (publication.track && publication.isSubscribed) {
               const element = publication.track.attach();
               if (publication.track.kind === 'video') {
@@ -478,7 +488,7 @@ export default function Meeting() {
           });
           
           // Handle new tracks being subscribed
-          participant.on('trackSubscribed', (track) => {
+          participant.on('trackSubscribed', (track: any) => {
             const element = track.attach();
             if (track.kind === 'video') {
               element.setAttribute('id', `remote-video-${participant.identity}`);
@@ -513,13 +523,24 @@ export default function Meeting() {
           });
           
           // Handle track unsubscribed
-          participant.on('trackUnsubscribed', (track) => {
+          participant.on('trackUnsubscribed', (track: any) => {
             track.detach();
           });
-        });
+        };
         
-        // Handle participants leaving
-        room.on('participantDisconnected', async (participant) => {
+        participantConnectedHandlerRef.current = participantConnectedHandler;
+        room.on('participantConnected', participantConnectedHandler);
+        
+        // Handle participants leaving - only attach once
+        const participantDisconnectedHandler = async (participant: any) => {
+          // Throttle notifications - only show if not shown in last 2 seconds
+          const now = Date.now();
+          const lastNotification = notificationThrottleRef.current.get(`left-${participant.identity}`);
+          if (lastNotification && (now - lastNotification) < 2000) {
+            return; // Skip duplicate notification
+          }
+          notificationThrottleRef.current.set(`left-${participant.identity}`, now);
+          
           // Only notify if this participant was previously notified as joined
           const wasNotified = notifiedParticipantsRef.current.has(participant.identity);
           
@@ -530,7 +551,7 @@ export default function Meeting() {
               try {
                 element.remove();
               } catch (e) {
-                console.error("Error removing track element:", e);
+                // Silent cleanup - errors are expected if elements already removed
               }
             });
             trackElementsRef.current.delete(participant.identity);
@@ -540,13 +561,14 @@ export default function Meeting() {
           const allElements = document.querySelectorAll(`[id^="remote-video-${participant.identity}"], [id^="remote-audio-${participant.identity}"]`);
           allElements.forEach(el => el.remove());
           
-          // Update participant count before checking
+          // Update participant count
           setParticipants(prev => {
             const newSet = new Set(prev);
+            const participantWasInSet = newSet.has(participant.identity);
             newSet.delete(participant.identity);
             
-            // Only show notification if participant was previously notified and we're removing them
-            if (wasNotified && newSet.size < prev.size) {
+            // Only show notification if participant was previously notified and actually in the set
+            if (wasNotified && participantWasInSet) {
               notifiedParticipantsRef.current.delete(participant.identity);
               
               // Use setTimeout to avoid state update issues
@@ -573,7 +595,10 @@ export default function Meeting() {
             
             return newSet;
           });
-        });
+        };
+        
+        participantDisconnectedHandlerRef.current = participantDisconnectedHandler;
+        room.on('participantDisconnected', participantDisconnectedHandler);
         
         // Handle local video track
         room.localParticipant.videoTracks.forEach(publication => {
@@ -608,17 +633,17 @@ export default function Meeting() {
         });
         
         // Show connected toast only once
-        if (!roomRef.current?._hasShownConnectedToast) {
+        if (!hasShownConnectedToastRef.current) {
+          hasShownConnectedToastRef.current = true;
           toast({
             title: "Connected",
             description: isVideoOn ? "Video call connected." : "Audio call connected.",
             duration: 3000,
           });
-          // Mark as shown to prevent duplicate toasts
-          if (roomRef.current) {
-            roomRef.current._hasShownConnectedToast = true;
-          }
         }
+        
+        // Mark event handlers as attached
+        eventHandlersAttachedRef.current = true;
         // Reset connecting flag on successful connection
         isConnectingRef.current = false;
       } catch (err: any) {

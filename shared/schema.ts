@@ -249,9 +249,25 @@ export const loginSchema = z.object({
 
 export const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters").refine(
+    (val) => !/^\d+$/.test(val),
+    "Password can't be entirely numeric"
+  ),
+  confirmPassword: z.string().min(8, "Password must be at least 8 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
+  username: z.string().min(2, "Username must be at least 2 characters").optional(),
   role: z.enum(["doctor", "patient"]),
+  // Doctor-specific fields
+  specialty: z.string().optional(),
+  city: z.string().optional(),
+  // Patient-specific fields
+  gender: z.string().optional(),
+  age: z.string().optional(),
+  procedure: z.string().optional(),
+  connectToPeers: z.boolean().optional(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

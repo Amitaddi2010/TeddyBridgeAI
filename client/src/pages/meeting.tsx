@@ -925,9 +925,20 @@ export default function Meeting() {
             variant={isMuted ? "destructive" : "secondary"}
             size="icon"
             className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
-            onClick={() => {
+            onClick={async () => {
               const newMutedState = !isMuted;
               setIsMuted(newMutedState);
+              
+              // Handle local audio track ref
+              if (localAudioTrackRef.current) {
+                if (newMutedState) {
+                  localAudioTrackRef.current.disable();
+                } else {
+                  localAudioTrackRef.current.enable();
+                }
+              }
+              
+              // Handle published audio tracks
               if (roomRef.current) {
                 roomRef.current.localParticipant.audioTracks.forEach(publication => {
                   if (publication.track) {
@@ -951,12 +962,16 @@ export default function Meeting() {
             className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
             onClick={async () => {
               const newVideoState = !isVideoOn;
-              setIsVideoOn(newVideoState);
               
-              if (roomRef.current) {
+              if (!roomRef.current) {
+                setIsVideoOn(newVideoState);
+                return;
+              }
+              
+              try {
                 if (newVideoState) {
                   // Enable video - create and publish track
-                  try {
+                  if (!localVideoTrackRef.current) {
                     const videoTrack = await TwilioVideo.createLocalVideoTrack({
                       width: 1280,
                       height: 720,
@@ -972,32 +987,65 @@ export default function Meeting() {
                     element.style.objectFit = 'cover';
                     const videoContainer = document.getElementById('local-video-container');
                     if (videoContainer) {
+                      // Remove any existing video element first
+                      const existingVideo = videoContainer.querySelector('#local-video');
+                      if (existingVideo) existingVideo.remove();
                       videoContainer.appendChild(element);
                     }
-                  } catch (err) {
-                    console.error("Failed to enable video:", err);
-                    toast({
-                      title: "Video Unavailable",
-                      description: "Could not access camera.",
-                      variant: "destructive",
-                    });
-                    setIsVideoOn(false);
+                  } else {
+                    // Re-enable existing track
+                    localVideoTrackRef.current.enable();
+                    roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+                    
+                    // Re-attach to UI if needed
+                    const videoContainer = document.getElementById('local-video-container');
+                    if (videoContainer && !videoContainer.querySelector('#local-video')) {
+                      const element = localVideoTrackRef.current.attach();
+                      element.setAttribute('id', 'local-video');
+                      element.style.width = '100%';
+                      element.style.height = '100%';
+                      element.style.objectFit = 'cover';
+                      videoContainer.appendChild(element);
+                    }
                   }
+                  setIsVideoOn(true);
                 } else {
-                  // Disable video - unpublish and stop track
+                  // Disable video - unpublish and disable track
+                  if (localVideoTrackRef.current) {
+                    localVideoTrackRef.current.disable();
+                    roomRef.current.localParticipant.videoTracks.forEach(publication => {
+                      if (publication.track === localVideoTrackRef.current) {
+                        roomRef.current.localParticipant.unpublishTrack(publication.track);
+                      }
+                    });
+                    
+                    // Remove video element from UI
+                    const videoContainer = document.getElementById('local-video-container');
+                    const videoElement = videoContainer?.querySelector('#local-video');
+                    if (videoElement) {
+                      videoElement.remove();
+                    }
+                  }
+                  
+                  // Also handle any other published video tracks
                   roomRef.current.localParticipant.videoTracks.forEach(publication => {
-                    if (publication.track) {
+                    if (publication.track && publication.track !== localVideoTrackRef.current) {
                       roomRef.current.localParticipant.unpublishTrack(publication.track);
                       publication.track.stop();
-                      const element = document.getElementById('local-video');
-                      if (element) element.remove();
                     }
                   });
-                  if (localVideoTrackRef.current) {
-                    localVideoTrackRef.current.stop();
-                    localVideoTrackRef.current = null;
-                  }
+                  
+                  setIsVideoOn(false);
                 }
+              } catch (err: any) {
+                console.error("Failed to toggle video:", err);
+                toast({
+                  title: "Video Error",
+                  description: err.message || "Could not toggle video.",
+                  variant: "destructive",
+                });
+                // Revert state on error
+                setIsVideoOn(!newVideoState);
               }
             }}
             data-testid="button-toggle-video"
@@ -1048,6 +1096,7 @@ export default function Meeting() {
             variant="ghost"
             size="icon"
             className="w-14 h-14 rounded-full text-white hover:text-white hover:bg-white/10 shadow-lg"
+            onClick={() => setShowSettingsModal(true)}
             data-testid="button-settings"
           >
             <Settings className="w-6 h-6" />
@@ -1143,6 +1192,157 @@ export default function Meeting() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsModal} onOpenChange={setShowSettingsModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Call Settings
+            </DialogTitle>
+            <DialogDescription>
+              Adjust your audio and video settings
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="mic-settings">Microphone</Label>
+                <p className="text-sm text-muted-foreground">
+                  {isMuted ? "Muted" : "Unmuted"}
+                </p>
+              </div>
+              <Button
+                variant={isMuted ? "destructive" : "secondary"}
+                size="sm"
+                onClick={async () => {
+                  const newMutedState = !isMuted;
+                  setIsMuted(newMutedState);
+                  
+                  if (localAudioTrackRef.current) {
+                    if (newMutedState) {
+                      localAudioTrackRef.current.disable();
+                    } else {
+                      localAudioTrackRef.current.enable();
+                    }
+                  }
+                  
+                  if (roomRef.current) {
+                    roomRef.current.localParticipant.audioTracks.forEach(publication => {
+                      if (publication.track) {
+                        if (newMutedState) {
+                          publication.track.disable();
+                        } else {
+                          publication.track.enable();
+                        }
+                      }
+                    });
+                  }
+                }}
+              >
+                {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
+                {isMuted ? "Unmute" : "Mute"}
+              </Button>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="video-settings">Camera</Label>
+                <p className="text-sm text-muted-foreground">
+                  {isVideoOn ? "On" : "Off"}
+                </p>
+              </div>
+              <Button
+                variant={isVideoOn ? "secondary" : "destructive"}
+                size="sm"
+                onClick={async () => {
+                  const newVideoState = !isVideoOn;
+                  
+                  if (!roomRef.current) {
+                    setIsVideoOn(newVideoState);
+                    return;
+                  }
+                  
+                  try {
+                    if (newVideoState) {
+                      if (!localVideoTrackRef.current) {
+                        const videoTrack = await TwilioVideo.createLocalVideoTrack({
+                          width: 1280,
+                          height: 720,
+                        });
+                        localVideoTrackRef.current = videoTrack;
+                        roomRef.current.localParticipant.publishTrack(videoTrack);
+                        
+                        const element = videoTrack.attach();
+                        element.setAttribute('id', 'local-video');
+                        element.style.width = '100%';
+                        element.style.height = '100%';
+                        element.style.objectFit = 'cover';
+                        const videoContainer = document.getElementById('local-video-container');
+                        if (videoContainer) {
+                          const existingVideo = videoContainer.querySelector('#local-video');
+                          if (existingVideo) existingVideo.remove();
+                          videoContainer.appendChild(element);
+                        }
+                      } else {
+                        localVideoTrackRef.current.enable();
+                        roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+                        
+                        const videoContainer = document.getElementById('local-video-container');
+                        if (videoContainer && !videoContainer.querySelector('#local-video')) {
+                          const element = localVideoTrackRef.current.attach();
+                          element.setAttribute('id', 'local-video');
+                          element.style.width = '100%';
+                          element.style.height = '100%';
+                          element.style.objectFit = 'cover';
+                          videoContainer.appendChild(element);
+                        }
+                      }
+                      setIsVideoOn(true);
+                    } else {
+                      if (localVideoTrackRef.current) {
+                        localVideoTrackRef.current.disable();
+                        roomRef.current.localParticipant.videoTracks.forEach(publication => {
+                          if (publication.track === localVideoTrackRef.current) {
+                            roomRef.current.localParticipant.unpublishTrack(publication.track);
+                          }
+                        });
+                        
+                        const videoContainer = document.getElementById('local-video-container');
+                        const videoElement = videoContainer?.querySelector('#local-video');
+                        if (videoElement) {
+                          videoElement.remove();
+                        }
+                      }
+                      
+                      roomRef.current.localParticipant.videoTracks.forEach(publication => {
+                        if (publication.track && publication.track !== localVideoTrackRef.current) {
+                          roomRef.current.localParticipant.unpublishTrack(publication.track);
+                          publication.track.stop();
+                        }
+                      });
+                      
+                      setIsVideoOn(false);
+                    }
+                  } catch (err: any) {
+                    console.error("Failed to toggle video:", err);
+                    setIsVideoOn(!newVideoState);
+                  }
+                }}
+              >
+                {isVideoOn ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
+                {isVideoOn ? "Turn Off" : "Turn On"}
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSettingsModal(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

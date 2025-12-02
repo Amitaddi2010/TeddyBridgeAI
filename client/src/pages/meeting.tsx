@@ -70,6 +70,32 @@ export default function Meeting() {
   const queryClient = useQueryClient();
   const meetingId = params?.id || "";
 
+  // Configure Twilio Video logging to suppress telemetry warnings
+  useEffect(() => {
+    if (typeof TwilioVideo !== 'undefined' && TwilioVideo.Logger) {
+      // Set log level to error to suppress warnings
+      TwilioVideo.Logger.setLevel('error');
+      // Alternatively, filter out track-stalled warnings
+      const originalLog = console.warn;
+      console.warn = (...args: any[]) => {
+        // Suppress Twilio track-stalled telemetry warnings
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('track-stalled')) {
+          return;
+        }
+        // Suppress Twilio telemetry warnings
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('[connect') && args[0].includes('telemetry')) {
+          return;
+        }
+        originalLog.apply(console, args);
+      };
+      
+      return () => {
+        // Restore original console.warn on cleanup
+        console.warn = originalLog;
+      };
+    }
+  }, []);
+
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showEndCallModal, setShowEndCallModal] = useState(false);
   const [consentScrolled, setConsentScrolled] = useState(false);

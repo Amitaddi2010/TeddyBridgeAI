@@ -24,6 +24,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     name = models.CharField(max_length=255)
+    username = models.CharField(max_length=100, blank=True, null=True, help_text='Display username')
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     avatar_url = models.URLField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
@@ -44,6 +45,7 @@ class Doctor(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='doctor_profile')
     specialty = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=255, blank=True, null=True)
     license_number = models.CharField(max_length=100, blank=True, null=True)
     verified = models.BooleanField(default=False)
     bio = models.TextField(blank=True, null=True)
@@ -61,6 +63,10 @@ class Patient(models.Model):
     emergency_contact = models.CharField(max_length=255, blank=True, null=True)
     medical_history = models.TextField(blank=True, null=True)
     medical_conditions = models.JSONField(blank=True, null=True, help_text='List of medical conditions/issues')
+    gender = models.CharField(max_length=50, blank=True, null=True)
+    age = models.IntegerField(blank=True, null=True)
+    procedure = models.CharField(max_length=255, blank=True, null=True, help_text='Medical procedure or treatment')
+    connect_to_peers = models.BooleanField(default=False, help_text='Allow connection with other patients')
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:

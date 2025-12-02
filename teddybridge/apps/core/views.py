@@ -16,16 +16,38 @@ def register(request):
     password = request.data.get('password')
     name = request.data.get('name')
     role = request.data.get('role')
+    username = request.data.get('username', '').strip() or None
     
     if User.objects.filter(email=email).exists():
         return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
     
-    user = User.objects.create_user(email=email, password=password, name=name, role=role)
+    # Create user with username if provided
+    user = User.objects.create_user(email=email, password=password, name=name, role=role, username=username)
     
     if role == 'doctor':
-        Doctor.objects.create(user=user)
+        # Doctor-specific fields
+        specialty = request.data.get('specialty', '').strip() or None
+        city = request.data.get('city', '').strip() or None
+        Doctor.objects.create(
+            user=user,
+            specialty=specialty,
+            city=city
+        )
     else:
-        Patient.objects.create(user=user)
+        # Patient-specific fields
+        gender = request.data.get('gender', '').strip() or None
+        age_str = request.data.get('age', '').strip()
+        age = int(age_str) if age_str and age_str.isdigit() else None
+        procedure = request.data.get('procedure', '').strip() or None
+        connect_to_peers = request.data.get('connectToPeers', False) or request.data.get('connect_to_peers', False)
+        
+        Patient.objects.create(
+            user=user,
+            gender=gender,
+            age=age,
+            procedure=procedure,
+            connect_to_peers=bool(connect_to_peers)
+        )
     
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     request.session.save()
@@ -36,6 +58,7 @@ def register(request):
             'id': str(user.id),
             'email': user.email,
             'name': user.name,
+            'username': user.username,
             'role': user.role,
         }
     })

@@ -128,6 +128,11 @@ export default function Meeting() {
   const isConnectingRef = useRef<boolean>(false);
   const notifiedParticipantsRef = useRef<Set<string>>(new Set()); // Track notified participants
   const trackElementsRef = useRef<Map<string, Set<HTMLElement>>>(new Map()); // Track attached elements
+  const eventHandlersAttachedRef = useRef<boolean>(false);
+  const hasShownConnectedToastRef = useRef<boolean>(false);
+  const notificationThrottleRef = useRef<Map<string, number>>(new Map());
+  const participantConnectedHandlerRef = useRef<((participant: any) => void) | null>(null);
+  const participantDisconnectedHandlerRef = useRef<((participant: any) => void) | null>(null);
 
   const { data: meetingInfo, isLoading, error } = useQuery<MeetingInfo>({
     queryKey: ["/api/meetings", meetingId],

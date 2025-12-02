@@ -22,52 +22,26 @@ def create_meeting(request):
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
     
+    # Only doctors can create meetings
+    if request.user.role != 'doctor':
+        return Response({'error': 'Only doctors can create meetings'}, status=status.HTTP_403_FORBIDDEN)
+    
     try:
-        if request.user.role == 'doctor':
-            doctor = request.user.doctor_profile
-            patient_id = request.data.get('patientId')
-            if not patient_id:
-                return Response({'error': 'Patient ID is required'}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                patient = Patient.objects.get(id=patient_id)
-            except Patient.DoesNotExist:
-                return Response({'error': 'Patient not found'}, status=status.HTTP_404_NOT_FOUND)
-        elif request.user.role == 'patient':
-            patient = request.user.patient_profile
-            doctor_id = request.data.get('doctorId')
-            if not doctor_id:
-                return Response({'error': 'Doctor ID is required'}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                doctor = Doctor.objects.get(id=doctor_id)
-            except Doctor.DoesNotExist:
-                return Response({'error': 'Doctor not found'}, status=status.HTTP_404_NOT_FOUND)
-            
-            # Check if patient is linked to this doctor
-            from teddybridge.apps.core.models import DoctorPatientLink
-            is_linked = DoctorPatientLink.objects.filter(doctor=doctor, patient=patient).exists()
-            
-            # For immediate calls, patient must be linked to the doctor
-            is_immediate = request.data.get('isImmediate', False)
-            if is_immediate and not is_linked:
-                return Response({
-                    'error': 'You must be linked to this doctor before calling. Please ask the doctor to schedule a meeting or link via QR code.'
-                }, status=status.HTTP_403_FORBIDDEN)
-        else:
-            return Response({'error': 'Invalid user role'}, status=status.HTTP_403_FORBIDDEN)
-    except (Doctor.DoesNotExist, Patient.DoesNotExist):
-        # Create profile if it doesn't exist
-        if request.user.role == 'doctor':
-            doctor = Doctor.objects.create(user=request.user)
-            patient = Patient.objects.get(id=request.data.get('patientId'))
-        else:
-            patient = Patient.objects.create(user=request.user)
-            doctor = Doctor.objects.get(id=request.data.get('doctorId'))
+        doctor = request.user.doctor_profile
+        patient_id = request.data.get('patientId')
+        if not patient_id:
+            return Response({'error': 'Patient ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            patient = Patient.objects.get(id=patient_id)
+        except Patient.DoesNotExist:
+            return Response({'error': 'Patient not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Doctor.DoesNotExist:
+        # Create doctor profile if it doesn't exist
+        doctor = Doctor.objects.create(user=request.user)
     
     title = request.data.get('title', 'Video Consultation')
     scheduled_at = request.data.get('scheduledAt')
     is_immediate = request.data.get('isImmediate', False)
-    
-    # Note: Link check for patients was already done above
     
     # If immediate call, set status to 'in_progress' and no scheduled time
     if is_immediate:

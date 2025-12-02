@@ -27,6 +27,8 @@ export function CallNotification() {
   const [, setLocation] = useLocation();
   const [showCallDialog, setShowCallDialog] = useState(false);
   const [incomingCall, setIncomingCall] = useState<Notification | null>(null);
+  const [processedNotificationIds, setProcessedNotificationIds] = useState<Set<string>>(new Set());
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const { data } = useQuery({
     queryKey: ["/api/user/notifications/list"],
@@ -36,62 +38,85 @@ export function CallNotification() {
   const notifications: Notification[] = data?.notifications || [];
 
   useEffect(() => {
-    // Find unread call notifications
+    // Find unread call notifications that haven't been processed yet
     const callNotification = notifications.find(
-      (n) => !n.isRead && (n.type === "call" || n.title === "Incoming Call") && n.link?.startsWith("/meeting/")
+      (n) => 
+        !n.isRead && 
+        (n.type === "call" || n.title === "Incoming Call") && 
+        n.link?.startsWith("/meeting/") &&
+        !processedNotificationIds.has(n.id) &&
+        !isProcessing
     );
 
-    if (callNotification && !showCallDialog && !incomingCall) {
+    if (callNotification && !showCallDialog) {
       setIncomingCall(callNotification);
       setShowCallDialog(true);
+      // Mark as processed to prevent re-triggering
+      setProcessedNotificationIds(prev => new Set(prev).add(callNotification.id));
     }
-  }, [notifications, showCallDialog, incomingCall]);
+  }, [notifications, showCallDialog, processedNotificationIds, isProcessing]);
 
   const handleAccept = async () => {
-    if (incomingCall?.link) {
-      try {
-        // Mark notification as read
-        await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
-        setShowCallDialog(false);
-        setIncomingCall(null);
-        // Navigate to meeting
-        setLocation(incomingCall.link);
-      } catch (error) {
-        console.error("Failed to accept call:", error);
-        // Still navigate even if marking as read fails
-        setShowCallDialog(false);
-        setIncomingCall(null);
-        setLocation(incomingCall.link);
-      }
+    if (!incomingCall?.link || isProcessing) return;
+    
+    setIsProcessing(true);
+    try {
+      // Mark notification as read
+      await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
+      const link = incomingCall.link;
+      // Clear state first
+      setShowCallDialog(false);
+      setIncomingCall(null);
+      // Small delay to ensure state is cleared before navigation
+      setTimeout(() => {
+        setLocation(link);
+      }, 100);
+    } catch (error) {
+      console.error("Failed to accept call:", error);
+      // Still navigate even if marking as read fails
+      const link = incomingCall.link;
+      setShowCallDialog(false);
+      setIncomingCall(null);
+      setTimeout(() => {
+        setLocation(link);
+      }, 100);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleDecline = async () => {
-    if (incomingCall) {
-      try {
-        // Mark notification as read
-        await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
-      } catch (error) {
-        console.error("Failed to decline call:", error);
-      } finally {
-        setShowCallDialog(false);
-        setIncomingCall(null);
-      }
+    if (!incomingCall || isProcessing) return;
+    
+    setIsProcessing(true);
+    try {
+      // Mark notification as read
+      await apiRequest("POST", `/api/user/notifications/${incomingCall.id}/read`);
+    } catch (error) {
+      console.error("Failed to decline call:", error);
+    } finally {
+      setShowCallDialog(false);
+      setIncomingCall(null);
+      setIsProcessing(false);
     }
   };
 
   if (!incomingCall) return null;
 
+  if (!incomingCall) return null;
+
   return (
     <Dialog 
-      open={showCallDialog} 
+      open={showCallDialog && !isProcessing} 
       onOpenChange={(open) => {
         // Prevent closing by clicking outside or pressing ESC
-        if (!open) {
+        if (!open && !isProcessing) {
           // Only allow closing via buttons
           return;
         }
-        setShowCallDialog(open);
+        if (open && !isProcessing) {
+          setShowCallDialog(open);
+        }
       }}
     >
       <DialogContent 
@@ -112,25 +137,19 @@ export function CallNotification() {
         <DialogFooter className="flex gap-2 sm:gap-0">
           <Button
             variant="destructive"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleDecline();
-            }}
+            onClick={handleDecline}
             className="flex-1"
             type="button"
+            disabled={isProcessing}
           >
             <X className="w-4 h-4 mr-2" />
             Decline
           </Button>
           <Button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleAccept();
-            }}
+            onClick={handleAccept}
             className="flex-1 bg-primary hover:bg-primary/90"
             type="button"
+            disabled={isProcessing}
           >
             <Phone className="w-4 h-4 mr-2" />
             Accept

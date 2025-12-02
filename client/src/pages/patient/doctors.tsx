@@ -417,7 +417,7 @@ export default function PatientDoctors() {
                           currentRating={doctor.patientRating}
                         />
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-2">
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button variant="outline" size="sm" className="w-full gap-1 relative text-xs sm:text-sm" data-testid={`button-message-${doctor.id}`}>
@@ -449,50 +449,10 @@ export default function PatientDoctors() {
                             </div>
                           </DialogContent>
                         </Dialog>
-                        <Button 
-                          size="sm" 
-                          className="w-full gap-1 text-xs sm:text-sm bg-primary hover:bg-primary/90" 
-                          data-testid={`button-call-${doctor.id}`}
-                          onClick={async () => {
-                            try {
-                              const res = await fetch(getApiUrl("/meetings"), {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                credentials: "include",
-                                body: JSON.stringify({
-                                  doctorId: doctor.id,
-                                  title: "Video Consultation",
-                                  isImmediate: true,
-                                }),
-                              });
-                              
-                              if (res.ok) {
-                                const data = await res.json();
-                                window.location.href = `/meeting/${data.id}`;
-                              } else {
-                                const errorData = await res.json();
-                                toast({
-                                  title: "Cannot Start Call",
-                                  description: errorData.error || "You must be linked to this doctor before calling. Please ask the doctor to schedule a meeting or link via QR code.",
-                                  variant: "destructive",
-                                });
-                              }
-                            } catch (error) {
-                              toast({
-                                title: "Failed to start call",
-                                description: "Please try again",
-                                variant: "destructive",
-                              });
-                            }
-                          }}
-                        >
-                          <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                          <span className="truncate">Call</span>
-                        </Button>
                         <Link href="/patient/appointments" className="w-full">
-                          <Button size="sm" variant="outline" className="w-full gap-1 text-xs sm:text-sm" data-testid={`button-schedule-${doctor.id}`}>
+                          <Button size="sm" className="w-full gap-1 text-xs sm:text-sm" data-testid={`button-schedule-${doctor.id}`}>
                             <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                            <span className="truncate">Schedule</span>
+                            <span className="truncate">Schedule Appointment</span>
                           </Button>
                         </Link>
                       </div>

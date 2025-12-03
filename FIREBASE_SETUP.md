@@ -50,10 +50,32 @@ VITE_FIREBASE_APP_ID=your_app_id_here
 Go to your Render service → Environment and add:
 
 **Option 1: JSON String (Recommended for Render)**
+
+You need to convert the multi-line JSON file to a single-line JSON string. You can do this in several ways:
+
+**Method A: Using Node.js script (easiest)**
+```bash
+node format-firebase-credentials.js path/to/your-service-account-key.json
 ```
-FIREBASE_CREDENTIALS_JSON={"type":"service_account","project_id":"teddybridge-f3f2c",...}
+This will output a properly formatted single-line JSON string that you can copy.
+
+**Method B: Manual conversion**
+1. Open your service account JSON file
+2. Remove all line breaks and extra spaces
+3. The result should be a single line like:
 ```
-Copy the entire contents of the downloaded JSON file as a single-line JSON string.
+FIREBASE_CREDENTIALS_JSON={"type":"service_account","project_id":"teddybridge-f3f2c","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...","client_email":"...",...}
+```
+
+**Method C: Using online JSON minifier**
+- Go to https://www.jsonminify.com/
+- Paste your JSON file content
+- Copy the minified (single-line) output
+
+**Important Notes:**
+- The entire JSON must be on ONE line with no line breaks
+- Keep all quotes and escape characters as-is
+- In Render, paste it as the **value** (not the key) for the `FIREBASE_CREDENTIALS_JSON` environment variable
 
 **Option 2: File Path (If storing file on server)**
 ```

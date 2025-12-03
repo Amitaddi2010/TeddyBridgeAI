@@ -10,6 +10,11 @@ vite.config.ts.*
 .env.local
 .env.*.local
 
+# Firebase credentials (NEVER commit these!)
+**/*-firebase-adminsdk-*.json
+firebase-adminsdk-*.json
+*firebase-adminsdk*.json
+
 # Database
 db.sqlite3
 *.sqlite3

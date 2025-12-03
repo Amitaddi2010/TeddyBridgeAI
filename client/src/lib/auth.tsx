@@ -186,6 +186,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const data = await res.json();
       
+      // Handle error responses
+      if (!res.ok) {
+        const errorMessage = data.message || data.error || "Google sign-in failed";
+        throw new Error(errorMessage);
+      }
+      
       // Check if user needs to select role
       if (data.requiresRoleSelection || (data.isNewUser && !role)) {
         // Store Firebase user info in sessionStorage to complete registration

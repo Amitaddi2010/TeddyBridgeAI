@@ -46,8 +46,18 @@ def initialize_firebase():
                 'projectId': project_id,
             })
             logger.info(f"Firebase Admin SDK initialized successfully with project ID: {project_id}")
+        except ValueError as e:
+            # App already initialized
+            if 'already exists' in str(e).lower():
+                logger.info("Firebase Admin SDK already initialized")
+                _firebase_app = firebase_admin.get_app()
+            else:
+                logger.error(f"Failed to initialize Firebase Admin SDK (ValueError): {str(e)}")
+                _firebase_app = False
         except Exception as e:
             logger.error(f"Failed to initialize Firebase Admin SDK: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             _firebase_app = False  # Mark as failed
     
     return _firebase_app
@@ -67,13 +77,22 @@ def verify_firebase_token(id_token):
             logger.warning("Firebase Admin SDK not initialized, cannot verify token")
             return None
         
-        initialize_firebase()
+        firebase_app = initialize_firebase()
+        if not firebase_app or firebase_app is False:
+            logger.error("Firebase Admin SDK initialization failed, cannot verify token")
+            return None
         
         # Verify the token
         decoded_token = auth.verify_id_token(id_token)
+        logger.info(f"Firebase token verified successfully for user: {decoded_token.get('email', 'unknown')}")
         return decoded_token
+    except firebase_admin.exceptions.FirebaseError as e:
+        logger.error(f"Firebase token verification failed (FirebaseError): {str(e)}")
+        return None
     except Exception as e:
-        logger.error(f"Firebase token verification failed: {str(e)}")
+        logger.error(f"Firebase token verification failed (unexpected error): {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 def get_user_from_token(id_token):

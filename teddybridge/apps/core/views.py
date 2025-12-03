@@ -153,18 +153,31 @@ def user_login(request):
 @csrf_exempt
 def google_auth(request):
     """Handle Google Sign-In via Firebase"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     auth_header = request.headers.get('Authorization', '')
     if not auth_header.startswith('Bearer '):
+        logger.warning("Google auth called without Bearer token")
         return Response({'error': 'Firebase token required'}, status=status.HTTP_400_BAD_REQUEST)
     
     if not FIREBASE_AVAILABLE:
+        logger.error("Firebase authentication not available - module not imported")
         return Response({'error': 'Firebase authentication not configured'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
     firebase_token = auth_header.split('Bearer ')[1]
+    logger.info(f"Attempting to verify Firebase token (length: {len(firebase_token)})")
+    
     firebase_user = get_user_from_token(firebase_token)
     
     if not firebase_user:
-        return Response({'error': 'Invalid Firebase token'}, status=status.HTTP_401_UNAUTHORIZED)
+        logger.error("Firebase token verification failed - user data is None")
+        return Response({
+            'error': 'Invalid Firebase token',
+            'message': 'Token verification failed. Please try signing in again.'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+    
+    logger.info(f"Firebase user verified: {firebase_user.get('email', 'unknown')}")
     
     email = firebase_user.get('email')
     name = request.data.get('name') or firebase_user.get('name')

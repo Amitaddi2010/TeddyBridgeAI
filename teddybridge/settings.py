@@ -36,6 +36,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Security Headers - Allow popups for Firebase authentication
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None  # Allow popups for OAuth flows
+
 ROOT_URLCONF = 'teddybridge.urls'
 
 TEMPLATES = [

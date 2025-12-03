@@ -153,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchUser(token);
   };
 
-  const loginWithGoogle = async (role: "doctor" | "patient") => {
+  const loginWithGoogle = async (role?: "doctor" | "patient") => {
     try {
       // Sign in with Google via Firebase
       const result = await signInWithPopup(auth, googleProvider);
@@ -163,8 +163,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       const token = await result.user.getIdToken();
+      const email = result.user.email;
+      const name = result.user.displayName || result.user.email?.split("@")[0] || "User";
+      const photoUrl = result.user.photoURL;
       
-      // Register/login with backend
+      // Register/login with backend (don't send role if not provided - let backend detect new user)
       const res = await fetch(getApiUrl("/auth/google"), {
         method: "POST",
         headers: { 
@@ -172,18 +175,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({ 
-          email: result.user.email,
-          name: result.user.displayName || result.user.email?.split("@")[0] || "User",
-          role,
+          email,
+          name,
+          ...(role && { role }),  // Only include role if provided
           firebaseUid: result.user.uid,
-          photoUrl: result.user.photoURL
+          photoUrl
         }),
         credentials: "include",
       });
       
-      if (!res.ok) {
-        const error = await res.text();
-        throw new Error(error || "Google sign-in failed");
+      const data = await res.json();
+      
+      // Check if user needs to select role
+      if (data.requiresRoleSelection || (data.isNewUser && !role)) {
+        // Store Firebase user info in sessionStorage to complete registration
+        sessionStorage.setItem('googleSignInData', JSON.stringify({
+          email,
+          name,
+          photoUrl,
+          firebaseToken: token,
+          firebaseUid: result.user.uid
+        }));
+        // Throw a special error that the UI can handle
+        const error: any = new Error("ROLE_SELECTION_REQUIRED");
+        error.requiresRoleSelection = true;
+        error.email = email;
+        error.name = name;
+        throw error;
+      }
+      
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || data.error || "Google sign-in failed");
       }
       
       await fetchUser(token);

@@ -25,14 +25,35 @@ export default function Register() {
   const redirectUrl = typeof window !== 'undefined' 
     ? new URLSearchParams(window.location.search).get('redirect') 
     : null;
+  
+  // Check if this is a Google sign-in flow
+  const isGoogleSignIn = typeof window !== 'undefined' 
+    ? new URLSearchParams(window.location.search).get('googleSignIn') === 'true'
+    : false;
+  
+  // Get Google sign-in data from sessionStorage
+  const googleSignInData = typeof window !== 'undefined' 
+    ? (() => {
+        try {
+          const data = sessionStorage.getItem('googleSignInData');
+          return data ? JSON.parse(data) : null;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      email: "",
+      email: typeof window !== 'undefined' 
+        ? (new URLSearchParams(window.location.search).get('email') || googleSignInData?.email || "")
+        : "",
       password: "",
       confirmPassword: "",
-      name: "",
+      name: typeof window !== 'undefined' 
+        ? (new URLSearchParams(window.location.search).get('name') || googleSignInData?.name || "")
+        : "",
       username: "",
       role: "patient",
       specialty: "",
@@ -59,12 +80,24 @@ export default function Register() {
   const onSubmit = async (data: RegisterInput) => {
     setIsLoading(true);
     try {
-      // Send only required fields to backend (backend doesn't handle all fields yet)
-      await register(data.email, data.password, data.name, data.role);
-      toast({
-        title: "Account created!",
-        description: "Welcome to TeddyBridge. Your account has been created successfully.",
-      });
+      // If this is a Google sign-in flow, complete the Google authentication
+      if (isGoogleSignIn && googleSignInData) {
+        // Complete Google sign-in with selected role
+        await loginWithGoogle(data.role);
+        // Clear Google sign-in data
+        sessionStorage.removeItem('googleSignInData');
+        toast({
+          title: "Account created!",
+          description: "Welcome to TeddyBridge. Your account has been created successfully.",
+        });
+      } else {
+        // Regular registration
+        await register(data.email, data.password, data.name, data.role);
+        toast({
+          title: "Account created!",
+          description: "Welcome to TeddyBridge. Your account has been created successfully.",
+        });
+      }
       // Redirect will be handled by useEffect above
     } catch (error) {
       toast({
@@ -199,12 +232,18 @@ export default function Register() {
                       <FormControl>
                         <Input
                           type="email"
-                              placeholder="Email"
+                          placeholder="Email"
                           data-testid="input-email"
                           {...field}
+                          disabled={isGoogleSignIn}
                         />
                       </FormControl>
                       <FormMessage />
+                      {isGoogleSignIn && (
+                        <FormDescription className="text-xs text-muted-foreground">
+                          Email from your Google account
+                        </FormDescription>
+                      )}
                     </FormItem>
                   )}
                 />
@@ -245,27 +284,29 @@ export default function Register() {
                       )}
                     />
 
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
+                {!isGoogleSignIn && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="password"
                               placeholder="Password"
-                          data-testid="input-password"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                              data-testid="input-password"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <FormField
-                  control={form.control}
+                    <FormField
+                      control={form.control}
                       name="confirmPassword"
                       render={({ field }) => (
                         <FormItem>
@@ -283,6 +324,15 @@ export default function Register() {
                       )}
                     />
                   </>
+                )}
+                
+                {isGoogleSignIn && (
+                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-900 dark:text-blue-100">
+                    <Info className="w-4 h-4 inline mr-2" />
+                    Please select your role below to complete your Google sign-in.
+                  </div>
+                )}
+                  </>
                 ) : (
                   /* Patient Form */
                   <>
@@ -297,9 +347,15 @@ export default function Register() {
                               placeholder="First Name"
                               data-testid="input-name"
                               {...field}
+                              disabled={isGoogleSignIn}
                             />
                           </FormControl>
                           <FormMessage />
+                          {isGoogleSignIn && (
+                            <FormDescription className="text-xs text-muted-foreground">
+                              Name from your Google account
+                            </FormDescription>
+                          )}
                         </FormItem>
                       )}
                     />

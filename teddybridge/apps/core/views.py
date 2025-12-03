@@ -182,8 +182,36 @@ def google_auth(request):
         if name and not user.name:
             user.name = name
             user.save()
+        
+        # User exists, login them
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        request.session.save()
+        
+        return Response({
+            'success': True,
+            'isNewUser': False,
+            'user': {
+                'id': str(user.id),
+                'email': user.email,
+                'name': user.name,
+                'role': user.role,
+            }
+        })
     except User.DoesNotExist:
-        # Create new user
+        # New user - check if role is provided
+        if not role:
+            # Return error indicating user needs to select role
+            return Response({
+                'success': False,
+                'isNewUser': True,
+                'requiresRoleSelection': True,
+                'email': email,
+                'name': name,
+                'photoUrl': photo_url,
+                'message': 'Please select your role (Patient or Doctor) to continue'
+            }, status=status.HTTP_200_OK)  # Use 200 to allow frontend to handle gracefully
+        
+        # Create new user with provided role
         username = request.data.get('username', '').strip() or None
         user = User.objects.create_user(
             email=email,
@@ -211,20 +239,21 @@ def google_auth(request):
                 procedure=procedure,
                 connect_to_peers=bool(connect_to_peers)
             )
-    
-    # Login the user
-    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-    request.session.save()
-    
-    return Response({
-        'success': True,
-        'user': {
-            'id': str(user.id),
-            'email': user.email,
-            'name': user.name,
-            'role': user.role,
-        }
-    })
+        
+        # Login the user
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        request.session.save()
+        
+        return Response({
+            'success': True,
+            'isNewUser': True,
+            'user': {
+                'id': str(user.id),
+                'email': user.email,
+                'name': user.name,
+                'role': user.role,
+            }
+        })
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

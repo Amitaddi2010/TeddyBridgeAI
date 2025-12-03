@@ -24,17 +24,28 @@ def initialize_firebase():
                 import json
                 cred_dict = json.loads(firebase_creds_json)
                 cred = credentials.Certificate(cred_dict)
+                # Get project ID from credentials
+                project_id = cred_dict.get('project_id', os.getenv('GOOGLE_CLOUD_PROJECT', 'teddybridge-f3f2c'))
             else:
                 # Try to load from file path
                 cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
                 if cred_path and os.path.exists(cred_path):
                     cred = credentials.Certificate(cred_path)
+                    # Try to read project ID from file
+                    import json
+                    with open(cred_path, 'r') as f:
+                        cred_dict = json.load(f)
+                        project_id = cred_dict.get('project_id', os.getenv('GOOGLE_CLOUD_PROJECT', 'teddybridge-f3f2c'))
                 else:
                     # Use default credentials (for Google Cloud environments)
                     cred = credentials.ApplicationDefault()
+                    project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'teddybridge-f3f2c')
             
-            _firebase_app = firebase_admin.initialize_app(cred)
-            logger.info("Firebase Admin SDK initialized successfully")
+            # Initialize with project ID
+            _firebase_app = firebase_admin.initialize_app(cred, {
+                'projectId': project_id,
+            })
+            logger.info(f"Firebase Admin SDK initialized successfully with project ID: {project_id}")
         except Exception as e:
             logger.error(f"Failed to initialize Firebase Admin SDK: {str(e)}")
             _firebase_app = False  # Mark as failed

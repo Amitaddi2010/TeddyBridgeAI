@@ -162,7 +162,8 @@ export default function Login() {
                   onClick={async () => {
                     setIsGoogleLoading(true);
                     try {
-                      await loginWithGoogle(roleParam || "patient");
+                      // Don't pass role - let backend detect if user is new
+                      await loginWithGoogle();
                       // Only show success if user isn't already logged in
                       if (!user) {
                         toast({
@@ -170,8 +171,27 @@ export default function Login() {
                           description: "You have successfully signed in with Google.",
                         });
                       }
-                    } catch (error) {
+                    } catch (error: any) {
                       const errorMessage = error instanceof Error ? error.message : "Failed to sign in with Google";
+                      
+                      // Handle role selection requirement
+                      if (error.requiresRoleSelection || errorMessage === "ROLE_SELECTION_REQUIRED") {
+                        // Redirect to register page with Google sign-in data
+                        const googleData = sessionStorage.getItem('googleSignInData');
+                        if (googleData) {
+                          const params = new URLSearchParams({
+                            googleSignIn: 'true',
+                            email: error.email || '',
+                            name: error.name || '',
+                          });
+                          if (redirectUrl) {
+                            params.append('redirect', redirectUrl);
+                          }
+                          setLocation(`/register?${params.toString()}`);
+                          return;
+                        }
+                      }
+                      
                       // Don't show error for user cancellation
                       if (!errorMessage.toLowerCase().includes("cancelled") && !errorMessage.toLowerCase().includes("cancel")) {
                         toast({

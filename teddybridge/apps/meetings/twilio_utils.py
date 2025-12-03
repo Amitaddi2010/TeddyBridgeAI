@@ -59,9 +59,9 @@ def generate_twilio_token(room_name, identity):
             return None
         
         token = AccessToken(account_sid, api_key, api_secret, identity=sanitized_identity)
-        video_grant = VideoGrant(room=room_name)
-        token.add_grant(video_grant)
-        
+    video_grant = VideoGrant(room=room_name)
+    token.add_grant(video_grant)
+    
         jwt_token = token.to_jwt()
         logger.info(f"Twilio token generated successfully (length: {len(jwt_token)})")
         return jwt_token

@@ -8,21 +8,56 @@ from django.utils.decorators import method_decorator
 from django.utils import timezone
 from .models import User, Doctor, Patient, QRToken, DoctorPatientLink, Notification
 
+# Firebase imports (optional)
+try:
+    from .firebase_auth import verify_firebase_token, get_user_from_token
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning("Firebase authentication not available. Install firebase-admin package.")
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @csrf_exempt
 def register(request):
+    # Check if Firebase token is provided
+    auth_header = request.headers.get('Authorization', '')
+    firebase_token = None
+    firebase_uid = None
+    
+    if auth_header.startswith('Bearer '):
+        firebase_token = auth_header.split('Bearer ')[1]
+        if FIREBASE_AVAILABLE:
+            firebase_user = get_user_from_token(firebase_token)
+            if firebase_user:
+                firebase_uid = firebase_user.get('firebase_uid')
+                # Use Firebase email and name if available
+                email = request.data.get('email') or firebase_user.get('email')
+                name = request.data.get('name') or firebase_user.get('name')
+                password = request.data.get('password') or 'firebase_auth'  # Dummy password for Firebase users
+    
     email = request.data.get('email')
     password = request.data.get('password')
     name = request.data.get('name')
     role = request.data.get('role')
     username = request.data.get('username', '').strip() or None
     
+    if not email:
+        return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
     if User.objects.filter(email=email).exists():
         return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
     
     # Create user with username if provided
     user = User.objects.create_user(email=email, password=password, name=name, role=role, username=username)
+    
+    # Store Firebase UID if provided
+    if firebase_uid:
+        # You might want to add a firebase_uid field to User model
+        # For now, we'll skip it if the field doesn't exist
+        pass
     
     if role == 'doctor':
         # Doctor-specific fields
@@ -67,6 +102,34 @@ def register(request):
 @permission_classes([AllowAny])
 @csrf_exempt
 def user_login(request):
+    # Check if Firebase token is provided
+    auth_header = request.headers.get('Authorization', '')
+    firebase_token = None
+    
+    if auth_header.startswith('Bearer '):
+        firebase_token = auth_header.split('Bearer ')[1]
+        if FIREBASE_AVAILABLE:
+            firebase_user = get_user_from_token(firebase_token)
+            if firebase_user:
+                email = firebase_user.get('email')
+                try:
+                    user = User.objects.get(email=email)
+                    # Login the user with Django session
+                    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+                    request.session.save()
+                    return Response({
+                        'success': True,
+                        'user': {
+                            'id': str(user.id),
+                            'email': user.email,
+                            'name': user.name,
+                            'role': user.role,
+                        }
+                    })
+                except User.DoesNotExist:
+                    return Response({'error': 'User not found. Please register first.'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Fallback to email/password authentication
     email = request.data.get('email')
     password = request.data.get('password')
     
@@ -84,6 +147,84 @@ def user_login(request):
             }
         })
     return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def google_auth(request):
+    """Handle Google Sign-In via Firebase"""
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return Response({'error': 'Firebase token required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not FIREBASE_AVAILABLE:
+        return Response({'error': 'Firebase authentication not configured'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    
+    firebase_token = auth_header.split('Bearer ')[1]
+    firebase_user = get_user_from_token(firebase_token)
+    
+    if not firebase_user:
+        return Response({'error': 'Invalid Firebase token'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    email = firebase_user.get('email')
+    name = request.data.get('name') or firebase_user.get('name')
+    role = request.data.get('role', 'patient')
+    firebase_uid = firebase_user.get('firebase_uid')
+    photo_url = request.data.get('photoUrl') or firebase_user.get('picture')
+    
+    if not email:
+        return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Check if user exists
+    try:
+        user = User.objects.get(email=email)
+        # Update user info if needed
+        if name and not user.name:
+            user.name = name
+            user.save()
+    except User.DoesNotExist:
+        # Create new user
+        username = request.data.get('username', '').strip() or None
+        user = User.objects.create_user(
+            email=email,
+            password='firebase_auth',  # Dummy password, won't be used
+            name=name,
+            role=role,
+            username=username
+        )
+        
+        # Create profile based on role
+        if role == 'doctor':
+            specialty = request.data.get('specialty', '').strip() or None
+            city = request.data.get('city', '').strip() or None
+            Doctor.objects.create(user=user, specialty=specialty, city=city)
+        else:
+            gender = request.data.get('gender', '').strip() or None
+            age_str = request.data.get('age', '').strip()
+            age = int(age_str) if age_str and age_str.isdigit() else None
+            procedure = request.data.get('procedure', '').strip() or None
+            connect_to_peers = request.data.get('connectToPeers', False)
+            Patient.objects.create(
+                user=user,
+                gender=gender,
+                age=age,
+                procedure=procedure,
+                connect_to_peers=bool(connect_to_peers)
+            )
+    
+    # Login the user
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    request.session.save()
+    
+    return Response({
+        'success': True,
+        'user': {
+            'id': str(user.id),
+            'email': user.email,
+            'name': user.name,
+            'role': user.role,
+        }
+    })
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

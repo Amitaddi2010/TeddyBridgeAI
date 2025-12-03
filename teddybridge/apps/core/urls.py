@@ -5,6 +5,7 @@ from . import ai_views
 urlpatterns = [
     path('register', views.register),
     path('login', views.user_login),
+    path('google', views.google_auth),  # New endpoint for Google sign-in
     path('logout', views.user_logout),
     path('me', views.get_current_user),
     path('link/verify/<str:token>', views.verify_qr_token),

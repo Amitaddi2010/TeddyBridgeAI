@@ -1,6 +1,16 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { User, Doctor, Patient } from "@shared/schema";
 import { getApiUrl } from "./api-config";
+import { auth, googleProvider } from "./firebase-config";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+  GoogleAuthProvider
+} from "firebase/auth";
 
 interface AuthUser extends User {
   doctor?: Doctor;
@@ -12,6 +22,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, role: "doctor" | "patient") => Promise<void>;
+  loginWithGoogle: (role: "doctor" | "patient") => Promise<void>;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;
 }
@@ -22,9 +33,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUser = async () => {
+  const fetchUser = async (firebaseToken?: string) => {
     try {
-      const res = await fetch(getApiUrl("/auth/me"), { credentials: "include" });
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (firebaseToken) {
+        headers["Authorization"] = `Bearer ${firebaseToken}`;
+      }
+      
+      const res = await fetch(getApiUrl("/auth/me"), { 
+        credentials: "include",
+        headers
+      });
       if (res.ok) {
         const data = await res.json();
         setUser(data);
@@ -38,14 +57,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Listen to Firebase auth state changes
   useEffect(() => {
-    fetchUser();
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        // Get Firebase ID token and fetch user from backend
+        const token = await firebaseUser.getIdToken();
+        await fetchUser(token);
+      } else {
+        // Firebase user is signed out, clear local user
+        setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
+    // Sign in with Firebase
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const token = await userCredential.user.getIdToken();
+    
+    // Send token to backend for verification and user data
     const res = await fetch(getApiUrl("/auth/login"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
       body: JSON.stringify({ email, password }),
       credentials: "include",
     });
@@ -53,30 +93,83 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const error = await res.text();
       throw new Error(error || "Login failed");
     }
-    await fetchUser();
+    await fetchUser(token);
   };
 
   const register = async (email: string, password: string, name: string, role: "doctor" | "patient") => {
+    // Create user in Firebase
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const token = await userCredential.user.getIdToken();
+    
+    // Register with backend (additional fields)
     const res = await fetch(getApiUrl("/auth/register"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name, role }),
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ email, password, name, role, firebaseUid: userCredential.user.uid }),
       credentials: "include",
     });
     if (!res.ok) {
       const error = await res.text();
       throw new Error(error || "Registration failed");
     }
-    await fetchUser();
+    await fetchUser(token);
+  };
+
+  const loginWithGoogle = async (role: "doctor" | "patient") => {
+    try {
+      // Sign in with Google via Firebase
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (!credential) {
+        throw new Error("Google sign-in failed");
+      }
+      
+      const token = await result.user.getIdToken();
+      
+      // Register/login with backend
+      const res = await fetch(getApiUrl("/auth/google"), {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          email: result.user.email,
+          name: result.user.displayName || result.user.email?.split("@")[0] || "User",
+          role,
+          firebaseUid: result.user.uid,
+          photoUrl: result.user.photoURL
+        }),
+        credentials: "include",
+      });
+      
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error || "Google sign-in failed");
+      }
+      
+      await fetchUser(token);
+    } catch (error: any) {
+      if (error.code === "auth/popup-closed-by-user") {
+        throw new Error("Sign-in was cancelled");
+      }
+      throw error;
+    }
   };
 
   const logout = async () => {
+    // Sign out from Firebase
+    await firebaseSignOut(auth);
+    // Sign out from backend
     await fetch(getApiUrl("/auth/logout"), { method: "POST", credentials: "include" });
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, refetch: fetchUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, loginWithGoogle, logout, refetch: fetchUser }}>
       {children}
     </AuthContext.Provider>
   );

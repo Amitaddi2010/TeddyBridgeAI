@@ -1063,118 +1063,78 @@ export default function Meeting() {
               
               try {
                 if (newVideoState) {
-                  // Enable video - create and publish track
-                  try {
-                    if (!localVideoTrackRef.current) {
-                      // Create new video track
-                      const videoTrack = await TwilioVideo.createLocalVideoTrack({
-                        width: 1280,
-                        height: 720,
-                      });
-                      localVideoTrackRef.current = videoTrack;
-                      
-                      // Publish track
-                      await roomRef.current.localParticipant.publishTrack(videoTrack);
-                      
-                      // Wait a bit for publication to complete
-                      await new Promise(resolve => setTimeout(resolve, 100));
-                      
-                      // Attach to UI
-                      const element = videoTrack.attach();
+                  setIsVideoOn(true);
+                  
+                  if (!localVideoTrackRef.current) {
+                    const videoTrack = await TwilioVideo.createLocalVideoTrack({
+                      width: 1280,
+                      height: 720,
+                    });
+                    localVideoTrackRef.current = videoTrack;
+                    await roomRef.current.localParticipant.publishTrack(videoTrack);
+                    
+                    const element = videoTrack.attach();
+                    element.setAttribute('id', 'local-video');
+                    element.style.width = '100%';
+                    element.style.height = '100%';
+                    element.style.objectFit = 'cover';
+                    
+                    const videoContainer = document.getElementById('local-video-container');
+                    if (videoContainer) {
+                      const existingVideo = videoContainer.querySelector('#local-video');
+                      if (existingVideo) existingVideo.remove();
+                      videoContainer.appendChild(element);
+                    }
+                  } else {
+                    localVideoTrackRef.current.enable();
+                    
+                    const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
+                      .some(pub => pub.track === localVideoTrackRef.current);
+                    
+                    if (!isPublished) {
+                      await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+                    }
+                    
+                    const videoContainer = document.getElementById('local-video-container');
+                    if (!videoContainer?.querySelector('#local-video')) {
+                      const element = localVideoTrackRef.current.attach();
                       element.setAttribute('id', 'local-video');
                       element.style.width = '100%';
                       element.style.height = '100%';
                       element.style.objectFit = 'cover';
-                      
-                      const videoContainer = document.getElementById('local-video-container');
                       if (videoContainer) {
-                        // Remove any existing video element first
-                        const existingVideo = videoContainer.querySelector('#local-video');
-                        if (existingVideo) existingVideo.remove();
                         videoContainer.appendChild(element);
                       }
-                    } else {
-                      // Re-enable existing track
-                      localVideoTrackRef.current.enable();
-                      
-                      // Check if already published
-                      const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
-                        .some(pub => pub.track === localVideoTrackRef.current);
-                      
-                      if (!isPublished) {
-                        await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                      }
-                      
-                      // Re-attach to UI if needed
-                      const videoContainer = document.getElementById('local-video-container');
-                      if (!videoContainer?.querySelector('#local-video')) {
-                        const element = localVideoTrackRef.current.attach();
-                        element.setAttribute('id', 'local-video');
-                        element.style.width = '100%';
-                        element.style.height = '100%';
-                        element.style.objectFit = 'cover';
-                        if (videoContainer) {
-                          videoContainer.appendChild(element);
-                        }
-                      }
                     }
-                    setIsVideoOn(true);
-                  } catch (err: any) {
-                    console.error("Failed to enable video:", err);
-                    setIsVideoOn(false);
-                    throw err;
                   }
                 } else {
-                  // Disable video - unpublish and disable track
-                  try {
-                    if (localVideoTrackRef.current) {
-                      // Disable track first
-                      localVideoTrackRef.current.disable();
-                      
-                      // Unpublish all video tracks matching this one
-                      const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
-                      for (const publication of videoPublications) {
-                        if (publication.track === localVideoTrackRef.current) {
-                          await roomRef.current.localParticipant.unpublishTrack(publication.track);
-                        }
-                      }
-                      
-                      // Remove video element from UI
-                      const videoContainer = document.getElementById('local-video-container');
-                      const videoElement = videoContainer?.querySelector('#local-video');
-                      if (videoElement) {
-                        videoElement.remove();
-                      }
-                      
-                      // Detach track
-                      localVideoTrackRef.current.detach();
-                    }
-                    
-                    // Also handle any other published video tracks
-                    const allVideoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
-                    for (const publication of allVideoPublications) {
-                      if (publication.track && publication.track !== localVideoTrackRef.current) {
+                  setIsVideoOn(false);
+                  
+                  if (localVideoTrackRef.current) {
+                    const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
+                    for (const publication of videoPublications) {
+                      if (publication.track === localVideoTrackRef.current) {
                         await roomRef.current.localParticipant.unpublishTrack(publication.track);
-                        publication.track.stop();
                       }
                     }
                     
-                    setIsVideoOn(false);
-                  } catch (err: any) {
-                    console.error("Failed to disable video:", err);
-                    setIsVideoOn(true); // Revert state on error
+                    localVideoTrackRef.current.disable();
+                    
+                    const videoContainer = document.getElementById('local-video-container');
+                    const videoElement = videoContainer?.querySelector('#local-video');
+                    if (videoElement) {
+                      videoElement.remove();
+                    }
                   }
                 }
               } catch (err: any) {
                 console.error("Failed to toggle video:", err);
+                setIsVideoOn(!newVideoState);
                 toast({
-                  title: "Video Error",
-                  description: err.message || "Could not toggle video.",
+                  title: "Error",
+                  description: err.message || "Failed to toggle video. Please try again.",
                   variant: "destructive",
                 });
-                // Revert state on error
-                setIsVideoOn(!newVideoState);
               }
             }}
             data-testid="button-toggle-video"

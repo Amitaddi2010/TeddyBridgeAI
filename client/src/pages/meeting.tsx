@@ -337,13 +337,31 @@ export default function Meeting() {
   // Helper function to attach track to DOM
   const attachTrackToDOM = (track: any, participantIdentity: string) => {
     try {
-      // Remove any existing elements for this track
+      // For audio tracks, check if element already exists and is playing
+      if (track.kind === 'audio') {
+        const existingAudio = document.getElementById(`remote-audio-${participantIdentity}`);
+        if (existingAudio && existingAudio instanceof HTMLAudioElement) {
+          // If element exists and is attached to the same track, don't remove it
+          if (existingAudio.srcObject === track.mediaStreamTrack) {
+            return; // Already attached, skip
+          }
+          // Only remove if it's a different track
+          try {
+            existingAudio.pause();
+            existingAudio.srcObject = null;
+          } catch (e) {
+            // Ignore errors when stopping
+          }
+          existingAudio.remove();
+        }
+      }
+      
+      // For video tracks, remove existing
       if (track.kind === 'video') {
         const existingVideo = document.getElementById(`remote-video-${participantIdentity}`);
-        if (existingVideo) existingVideo.remove();
-      } else {
-        const existingAudio = document.getElementById(`remote-audio-${participantIdentity}`);
-        if (existingAudio) existingAudio.remove();
+        if (existingVideo) {
+          existingVideo.remove();
+        }
       }
       
       const element = track.attach();
@@ -364,18 +382,34 @@ export default function Meeting() {
           document.body.appendChild(element);
         }
       } else {
-        // Audio track
+        // Audio track - attach to a hidden container to prevent removal issues
         element.setAttribute('id', `remote-audio-${participantIdentity}`);
         element.setAttribute('autoplay', 'true');
         element.setAttribute('playsinline', 'true');
         element.setAttribute('muted', 'false');
-        // Try to play the audio element
-        if (element instanceof HTMLAudioElement) {
-          element.play().catch(err => {
-            console.warn("Could not autoplay audio:", err);
-          });
+        element.style.display = 'none'; // Hide audio element
+        
+        // Create a container for audio elements if it doesn't exist
+        let audioContainer = document.getElementById('remote-audio-container');
+        if (!audioContainer) {
+          audioContainer = document.createElement('div');
+          audioContainer.id = 'remote-audio-container';
+          audioContainer.style.display = 'none';
+          document.body.appendChild(audioContainer);
         }
-        document.body.appendChild(element);
+        audioContainer.appendChild(element);
+        
+        // Try to play the audio element after a small delay to ensure it's in the DOM
+        if (element instanceof HTMLAudioElement) {
+          setTimeout(() => {
+            element.play().catch(err => {
+              // Only log non-abort errors
+              if (err.name !== 'AbortError') {
+                console.warn("Could not autoplay audio:", err);
+              }
+            });
+          }, 100);
+        }
       }
       
       // Track this element for cleanup
@@ -970,7 +1004,15 @@ export default function Meeting() {
             onClick={async () => {
               const newMutedState = !isMuted;
               
+              if (!roomRef.current) {
+                setIsMuted(newMutedState);
+                return;
+              }
+              
               try {
+                // Update state first for immediate UI feedback
+                setIsMuted(newMutedState);
+                
                 // Handle local audio track ref
                 if (localAudioTrackRef.current) {
                   if (newMutedState) {
@@ -980,25 +1022,26 @@ export default function Meeting() {
                   }
                 }
                 
-                // Handle published audio tracks
-                if (roomRef.current) {
-                  const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
-                  for (const publication of audioPublications) {
-                    if (publication.track) {
-                      if (newMutedState) {
-                        publication.track.disable();
-                      } else {
-                        publication.track.enable();
-                      }
+                // Handle published audio tracks from localParticipant
+                const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
+                for (const publication of audioPublications) {
+                  if (publication.track) {
+                    if (newMutedState) {
+                      publication.track.disable();
+                    } else {
+                      publication.track.enable();
                     }
                   }
                 }
-                
-                setIsMuted(newMutedState);
               } catch (err: any) {
                 console.error("Failed to toggle mute:", err);
                 // Revert state on error
                 setIsMuted(!newMutedState);
+                toast({
+                  title: "Error",
+                  description: "Failed to toggle microphone. Please try again.",
+                  variant: "destructive",
+                });
               }
             }}
             data-testid="button-toggle-mic"
@@ -1305,7 +1348,14 @@ export default function Meeting() {
                 onClick={async () => {
                   const newMutedState = !isMuted;
                   
+                  if (!roomRef.current) {
+                    setIsMuted(newMutedState);
+                    return;
+                  }
+                  
                   try {
+                    setIsMuted(newMutedState);
+                    
                     if (localAudioTrackRef.current) {
                       if (newMutedState) {
                         localAudioTrackRef.current.disable();
@@ -1314,23 +1364,24 @@ export default function Meeting() {
                       }
                     }
                     
-                    if (roomRef.current) {
-                      const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
-                      for (const publication of audioPublications) {
-                        if (publication.track) {
-                          if (newMutedState) {
-                            publication.track.disable();
-                          } else {
-                            publication.track.enable();
-                          }
+                    const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
+                    for (const publication of audioPublications) {
+                      if (publication.track) {
+                        if (newMutedState) {
+                          publication.track.disable();
+                        } else {
+                          publication.track.enable();
                         }
                       }
                     }
-                    
-                    setIsMuted(newMutedState);
                   } catch (err: any) {
                     console.error("Failed to toggle mute:", err);
                     setIsMuted(!newMutedState);
+                    toast({
+                      title: "Error",
+                      description: "Failed to toggle microphone. Please try again.",
+                      variant: "destructive",
+                    });
                   }
                 }}
               >
@@ -1359,13 +1410,15 @@ export default function Meeting() {
                   
                   try {
                     if (newVideoState) {
+                      setIsVideoOn(true);
+                      
                       if (!localVideoTrackRef.current) {
                         const videoTrack = await TwilioVideo.createLocalVideoTrack({
                           width: 1280,
                           height: 720,
                         });
                         localVideoTrackRef.current = videoTrack;
-                        roomRef.current.localParticipant.publishTrack(videoTrack);
+                        await roomRef.current.localParticipant.publishTrack(videoTrack);
                         
                         const element = videoTrack.attach();
                         element.setAttribute('id', 'local-video');
@@ -1380,27 +1433,38 @@ export default function Meeting() {
                         }
                       } else {
                         localVideoTrackRef.current.enable();
-                        roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+                        
+                        const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
+                          .some(pub => pub.track === localVideoTrackRef.current);
+                        
+                        if (!isPublished) {
+                          await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+                        }
                         
                         const videoContainer = document.getElementById('local-video-container');
-                        if (videoContainer && !videoContainer.querySelector('#local-video')) {
+                        if (!videoContainer?.querySelector('#local-video')) {
                           const element = localVideoTrackRef.current.attach();
                           element.setAttribute('id', 'local-video');
                           element.style.width = '100%';
                           element.style.height = '100%';
                           element.style.objectFit = 'cover';
-                          videoContainer.appendChild(element);
+                          if (videoContainer) {
+                            videoContainer.appendChild(element);
+                          }
                         }
                       }
-                      setIsVideoOn(true);
                     } else {
+                      setIsVideoOn(false);
+                      
                       if (localVideoTrackRef.current) {
-                        localVideoTrackRef.current.disable();
-                        roomRef.current.localParticipant.videoTracks.forEach(publication => {
+                        const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
+                        for (const publication of videoPublications) {
                           if (publication.track === localVideoTrackRef.current) {
-                            roomRef.current.localParticipant.unpublishTrack(publication.track);
+                            await roomRef.current.localParticipant.unpublishTrack(publication.track);
                           }
-                        });
+                        }
+                        
+                        localVideoTrackRef.current.disable();
                         
                         const videoContainer = document.getElementById('local-video-container');
                         const videoElement = videoContainer?.querySelector('#local-video');
@@ -1408,19 +1472,15 @@ export default function Meeting() {
                           videoElement.remove();
                         }
                       }
-                      
-                      roomRef.current.localParticipant.videoTracks.forEach(publication => {
-                        if (publication.track && publication.track !== localVideoTrackRef.current) {
-                          roomRef.current.localParticipant.unpublishTrack(publication.track);
-                          publication.track.stop();
-                        }
-                      });
-                      
-                      setIsVideoOn(false);
                     }
                   } catch (err: any) {
                     console.error("Failed to toggle video:", err);
                     setIsVideoOn(!newVideoState);
+                    toast({
+                      title: "Error",
+                      description: err.message || "Failed to toggle video. Please try again.",
+                      variant: "destructive",
+                    });
                   }
                 }}
               >

@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Notifications } from "@/components/notifications";
 import { FloatingTeddyAssistant } from "@/components/floating-teddy-assistant";
+import { ProfileCompletenessDialog } from "@/components/profile-completeness-dialog";
 import { Loader2 } from "lucide-react";
 
 import Landing from "@/pages/landing";
@@ -44,6 +45,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
+      <ProfileCompletenessDialog />
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">

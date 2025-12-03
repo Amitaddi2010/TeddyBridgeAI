@@ -310,20 +310,43 @@ def start_peer_meeting(request, meeting_id):
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
     
     try:
-        from teddybridge.apps.meetings.models import Meeting
+        import logging
+        logger = logging.getLogger(__name__)
+        from teddybridge.apps.core.models import Meeting, Doctor
         from teddybridge.apps.meetings.twilio_utils import generate_twilio_token
         
-        peer_meeting = PeerMeeting.objects.select_related('organizer', 'participant').get(id=meeting_id)
+        logger.info(f"Starting peer meeting {meeting_id} for user {request.user.id}")
+        
+        try:
+            peer_meeting = PeerMeeting.objects.select_related('organizer', 'participant').get(id=meeting_id)
+        except PeerMeeting.DoesNotExist:
+            logger.error(f"Peer meeting {meeting_id} not found")
+            return Response({'error': 'Peer meeting not found'}, status=status.HTTP_404_NOT_FOUND)
         
         # Only allow starting if user is organizer or participant
         if peer_meeting.organizer.id != request.user.id and peer_meeting.participant.id != request.user.id:
+            logger.warning(f"User {request.user.id} not authorized to start meeting {meeting_id}")
             return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
         
         # Only doctor-doctor meetings can be started (patient-patient meetings don't use video calls)
         if peer_meeting.organizer.role != 'doctor' or peer_meeting.participant.role != 'doctor':
+            logger.warning(f"Attempted to start non-doctor peer meeting {meeting_id}")
             return Response({'error': 'Only doctor-doctor peer meetings can be started as video calls'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if meeting already exists
+        # Get or create doctor profiles
+        try:
+            organizer_doctor = peer_meeting.organizer.doctor_profile
+        except Doctor.DoesNotExist:
+            logger.info(f"Creating doctor profile for organizer {peer_meeting.organizer.id}")
+            organizer_doctor = Doctor.objects.create(user=peer_meeting.organizer)
+        
+        try:
+            participant_doctor = peer_meeting.participant.doctor_profile
+        except Doctor.DoesNotExist:
+            logger.info(f"Creating doctor profile for participant {peer_meeting.participant.id}")
+            participant_doctor = Doctor.objects.create(user=peer_meeting.participant)
+        
+        # Check if meeting already exists for this peer meeting
         try:
             existing_meeting = Meeting.objects.filter(
                 doctor__user=peer_meeting.organizer,
@@ -331,32 +354,35 @@ def start_peer_meeting(request, meeting_id):
                 title=peer_meeting.title
             ).first()
             
-            if existing_meeting:
+            if existing_meeting and existing_meeting.status != 'completed':
                 # Update peer meeting status
                 peer_meeting.status = 'in_progress'
                 peer_meeting.meeting_url = f'/meeting/{existing_meeting.id}'
                 peer_meeting.save()
                 
+                logger.info(f"Using existing meeting {existing_meeting.id} for peer meeting {meeting_id}")
                 return Response({
                     'id': str(existing_meeting.id),
                     'meetingUrl': f'/meeting/{existing_meeting.id}',
                 })
-        except:
-            pass
-        
-        # Get doctor profiles
-        organizer_doctor = peer_meeting.organizer.doctor_profile
-        if not organizer_doctor:
-            return Response({'error': 'Organizer doctor profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.warning(f"Error checking for existing meeting: {str(e)}")
         
         # Create Meeting record (doctor-doctor: use organizer as doctor, patient=None)
-        meeting = Meeting.objects.create(
-            doctor=organizer_doctor,
-            patient=None,  # No patient for doctor-doctor meetings
-            title=peer_meeting.title,
-            scheduled_at=peer_meeting.scheduled_at,
-            status='in_progress'
-        )
+        try:
+            meeting = Meeting.objects.create(
+                doctor=organizer_doctor,
+                patient=None,  # No patient for doctor-doctor meetings
+                title=peer_meeting.title,
+                scheduled_at=peer_meeting.scheduled_at,
+                status='in_progress'
+            )
+            logger.info(f"Created new meeting {meeting.id} for peer meeting {meeting_id}")
+        except Exception as e:
+            logger.error(f"Error creating meeting: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return Response({'error': f'Failed to create meeting: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Update peer meeting
         peer_meeting.status = 'in_progress'
@@ -364,26 +390,30 @@ def start_peer_meeting(request, meeting_id):
         peer_meeting.save()
         
         # Create notification for the other doctor
-        other_doctor = peer_meeting.participant if peer_meeting.organizer.id == request.user.id else peer_meeting.organizer
-        create_notification(
-            user=other_doctor,
-            notification_type='call',
-            title='Peer Meeting Started',
-            message=f'{request.user.name} has started the meeting: {peer_meeting.title}',
-            link=f'/meeting/{meeting.id}'
-        )
+        try:
+            other_doctor = peer_meeting.participant if peer_meeting.organizer.id == request.user.id else peer_meeting.organizer
+            create_notification(
+                user=other_doctor,
+                notification_type='call',
+                title='Peer Meeting Started',
+                message=f'{request.user.name} has started the meeting: {peer_meeting.title}',
+                link=f'/meeting/{meeting.id}'
+            )
+        except Exception as notif_error:
+            logger.warning(f"Failed to create notification: {str(notif_error)}")
+            # Continue even if notification fails
         
         return Response({
             'id': str(meeting.id),
             'meetingUrl': f'/meeting/{meeting.id}',
         })
         
-    except PeerMeeting.DoesNotExist:
-        return Response({'error': 'Peer meeting not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         import logging
+        import traceback
         logger = logging.getLogger(__name__)
-        logger.error(f"Error starting peer meeting: {str(e)}")
+        logger.error(f"Error starting peer meeting {meeting_id}: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return Response({'error': f'Failed to start peer meeting: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['DELETE'])

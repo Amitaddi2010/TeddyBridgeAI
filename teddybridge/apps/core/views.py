@@ -334,6 +334,38 @@ def get_current_user(request):
                 'role': getattr(user, 'role', '') or '',
                 'avatarUrl': getattr(user, 'avatar_url', None) or None,
             }
+            
+            # Check profile completeness
+            is_profile_complete = True
+            missing_fields = []
+            
+            if user.role == 'doctor':
+                try:
+                    doctor = user.doctor_profile
+                    if not doctor.specialty:
+                        is_profile_complete = False
+                        missing_fields.append('specialty')
+                    if not doctor.city:
+                        is_profile_complete = False
+                        missing_fields.append('city')
+                except Doctor.DoesNotExist:
+                    is_profile_complete = False
+                    missing_fields.extend(['specialty', 'city'])
+            elif user.role == 'patient':
+                try:
+                    patient = user.patient_profile
+                    if not patient.gender:
+                        is_profile_complete = False
+                        missing_fields.append('gender')
+                    if not patient.age:
+                        is_profile_complete = False
+                        missing_fields.append('age')
+                except Patient.DoesNotExist:
+                    is_profile_complete = False
+                    missing_fields.extend(['gender', 'age'])
+            
+            data['isProfileComplete'] = is_profile_complete
+            data['missingFields'] = missing_fields if not is_profile_complete else []
         except Exception as e:
             logger.error(f"Error accessing basic user fields for user {user.id}: {str(e)}")
             return Response({

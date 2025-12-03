@@ -446,6 +446,11 @@ export default function Meeting() {
     if (isConnectingRef.current) return; // Prevent multiple simultaneous connection attempts
     if (eventHandlersAttachedRef.current) return; // Prevent re-attaching handlers
     
+    // Reset refs when starting a new connection to prevent stale state
+    hasShownConnectedToastRef.current = false;
+    notifiedParticipantsRef.current.clear();
+    notificationThrottleRef.current.clear();
+    
     // Check if Twilio token is available
     if (!meetingInfo?.twilioToken) {
       toast({
@@ -829,8 +834,9 @@ export default function Meeting() {
       eventHandlersAttachedRef.current = false;
       hasShownConnectedToastRef.current = false;
       notificationThrottleRef.current.clear();
+      notifiedParticipantsRef.current.clear();
     };
-  }, [isJoined, meetingInfo?.roomName, meetingInfo?.twilioToken, isVideoOn, toast, user?.name, meetingId]);
+  }, [isJoined, meetingInfo?.roomName, meetingInfo?.twilioToken, isVideoOn, meetingId]);
 
   if (isLoading) {
     return (

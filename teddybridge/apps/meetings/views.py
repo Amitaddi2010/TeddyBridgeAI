@@ -296,61 +296,153 @@ def upload_recording(request, meeting_id):
             aai.settings.api_key = assemblyai_key
             transcriber = aai.Transcriber()
             
-            logger.info("Starting transcription with AssemblyAI...")
-            transcript = transcriber.transcribe(audio_file)
+            logger.info(f"Starting transcription with AssemblyAI for meeting {meeting_id}, file size: {audio_file.size} bytes")
             
-            if transcript.status == aai.TranscriptStatus.completed:
-                logger.info(f"Transcription completed for meeting {meeting_id}, text length: {len(transcript.text)}")
-                meeting.transcript_text = transcript.text
-                meeting.status = 'transcription_pending'
-                meeting.save()
+            try:
+                # Start transcription (this is async)
+                transcript = transcriber.transcribe(audio_file)
+                logger.info(f"Transcription started, ID: {transcript.id}, status: {transcript.status}")
                 
-                groq_client = get_groq_client()
-                if groq_client:
-                    prompt = f"""Analyze this medical consultation transcript and extract structured clinical notes:
+                # Wait for transcription to complete (poll every 2 seconds, max 5 minutes)
+                import time
+                max_wait_time = 300  # 5 minutes
+                wait_interval = 2  # 2 seconds
+                elapsed_time = 0
+                
+                while transcript.status in [aai.TranscriptStatus.queued, aai.TranscriptStatus.processing]:
+                    if elapsed_time >= max_wait_time:
+                        logger.error(f"Transcription timeout for meeting {meeting_id} after {elapsed_time} seconds")
+                        meeting.status = 'transcription_failed'
+                        meeting.save()
+                        return Response({'success': False, 'error': 'Transcription timeout'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    
+                    time.sleep(wait_interval)
+                    elapsed_time += wait_interval
+                    transcript = transcriber.get_transcript(transcript.id)
+                    logger.info(f"Transcription status: {transcript.status}, elapsed: {elapsed_time}s")
+                
+                if transcript.status == aai.TranscriptStatus.completed:
+                    logger.info(f"Transcription completed for meeting {meeting_id}, text length: {len(transcript.text)}")
+                    meeting.transcript_text = transcript.text
+                    meeting.status = 'transcription_completed'
+                    meeting.save()
+                    
+                    # Generate AI notes using Groq
+                    groq_client = get_groq_client()
+                    if groq_client:
+                        logger.info("Generating AI notes with Groq...")
+                        prompt = f"""Analyze this medical consultation transcript and extract structured clinical notes in JSON format.
 
 Transcript:
 {transcript.text}
 
-Provide:
-1. Chief Complaint
-2. History of Present Illness (HPI)
-3. Past Medical History
-4. Current Medications
-5. Allergies
-6. Exam Observations
-7. Assessment
-8. Plan"""
-                    
-                    response = groq_client.chat.completions.create(
-                        model="openai/gpt-oss-120b",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.3,
-                        max_tokens=2000
-                    )
-                    
-                    ai_response = response.choices[0].message.content
-                    
-                    CallNote.objects.create(
-                        meeting=meeting,
-                        chief_complaint=ai_response[:500],
-                        ai_metadata={'raw_response': ai_response, 'transcript': transcript.text}
-                    )
-                    
-                    # Notify doctor that notes are ready
-                    create_notification(
-                        user=meeting.doctor.user,
-                        notification_type='note',
-                        title='AI Notes Ready',
-                        message=f'Clinical notes for {meeting.patient.user.name} are ready',
-                        link='/doctor/notes'
-                    )
-                    
-                    meeting.status = 'completed'
-                else:
+Provide a JSON object with the following structure:
+{{
+  "chiefComplaint": "Main reason for visit",
+  "hpi": "History of present illness",
+  "pastMedicalHistory": "Past medical conditions",
+  "medications": "Current medications",
+  "allergies": "Known allergies",
+  "examObservations": "Physical examination findings",
+  "assessment": "Clinical assessment",
+  "plan": "Treatment plan"
+}}
+
+Return only valid JSON, no markdown formatting."""
+                        
+                        try:
+                            response = groq_client.chat.completions.create(
+                                model="openai/gpt-oss-120b",
+                                messages=[{"role": "user", "content": prompt}],
+                                temperature=0.3,
+                                max_tokens=2000
+                            )
+                            
+                            ai_response = response.choices[0].message.content
+                            logger.info(f"AI response received, length: {len(ai_response)}")
+                            
+                            # Try to parse JSON response
+                            import json
+                            import re
+                            
+                            # Remove markdown code blocks if present
+                            ai_response_cleaned = re.sub(r'```json\s*', '', ai_response)
+                            ai_response_cleaned = re.sub(r'```\s*$', '', ai_response_cleaned).strip()
+                            
+                            try:
+                                notes_data = json.loads(ai_response_cleaned)
+                                
+                                # Create CallNote with parsed data
+                                call_note = CallNote.objects.create(
+                                    meeting=meeting,
+                                    chief_complaint=notes_data.get('chiefComplaint', ''),
+                                    hpi=notes_data.get('hpi', ''),
+                                    past_medical_history=notes_data.get('pastMedicalHistory', ''),
+                                    medications=notes_data.get('medications', ''),
+                                    allergies=notes_data.get('allergies', ''),
+                                    exam_observations=notes_data.get('examObservations', ''),
+                                    assessment=notes_data.get('assessment', ''),
+                                    plan=notes_data.get('plan', ''),
+                                    ai_metadata={'raw_response': ai_response, 'transcript': transcript.text, 'parsed': True}
+                                )
+                                
+                                logger.info(f"CallNote created successfully for meeting {meeting_id}, note ID: {call_note.id}")
+                                
+                                # Notify doctor that notes are ready
+                                create_notification(
+                                    user=meeting.doctor.user,
+                                    notification_type='note',
+                                    title='AI Notes Ready',
+                                    message=f'Clinical notes for {meeting.patient.user.name if meeting.patient else "patient"} are ready',
+                                    link='/doctor/notes'
+                                )
+                                
+                                meeting.status = 'completed'
+                                meeting.save()
+                                
+                                logger.info(f"Meeting {meeting_id} completed successfully with AI notes")
+                                
+                            except json.JSONDecodeError as json_err:
+                                logger.error(f"Failed to parse AI response as JSON: {json_err}")
+                                logger.error(f"AI response was: {ai_response_cleaned[:500]}")
+                                
+                                # Fallback: create note with raw response
+                                CallNote.objects.create(
+                                    meeting=meeting,
+                                    chief_complaint=ai_response[:500] if ai_response else '',
+                                    ai_metadata={'raw_response': ai_response, 'transcript': transcript.text, 'parsed': False, 'error': str(json_err)}
+                                )
+                                meeting.status = 'completed'
+                                meeting.save()
+                                logger.warning(f"Created CallNote with unparsed AI response for meeting {meeting_id}")
+                                
+                        except Exception as groq_err:
+                            logger.error(f"Error generating AI notes with Groq: {str(groq_err)}")
+                            import traceback
+                            logger.error(f"Traceback: {traceback.format_exc()}")
+                            # Still mark as completed even if AI fails
+                            meeting.status = 'completed'
+                            meeting.save()
+                    else:
+                        logger.warning("Groq client not available, skipping AI note generation")
+                        meeting.status = 'completed'
+                        meeting.save()
+                        
+                elif transcript.status == aai.TranscriptStatus.error:
+                    logger.error(f"Transcription failed for meeting {meeting_id}: {transcript.error}")
                     meeting.status = 'transcription_failed'
-            else:
+                    meeting.save()
+                else:
+                    logger.warning(f"Transcription status for meeting {meeting_id}: {transcript.status}")
+                    meeting.status = 'transcription_failed'
+                    meeting.save()
+                    
+            except Exception as transcribe_err:
+                logger.error(f"Error during transcription: {str(transcribe_err)}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 meeting.status = 'transcription_failed'
+                meeting.save()
         else:
             logger.warning(f"No recording file found in request for meeting {meeting_id}")
             meeting.status = 'completed'

@@ -90,6 +90,7 @@ export default function Meeting() {
   const audioStreamRef = useRef<MediaStream | null>(null);
   const isConnectingRef = useRef<boolean>(false);
   const connectedParticipantsRef = useRef<Set<string>>(new Set());
+  const consentScrollRef = useRef<HTMLDivElement>(null);
   
   // Track element refs - prevent duplicate attachments
   const attachedVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());

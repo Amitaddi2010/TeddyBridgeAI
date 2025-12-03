@@ -643,37 +643,45 @@ export default function Meeting() {
   };
 
   const handleConsentScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    const scrollTop = target.scrollTop;
-    const scrollHeight = target.scrollHeight;
-    const clientHeight = target.clientHeight;
-    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 10;
-    
-    if (isAtBottom) {
-      setConsentScrolled(true);
+    // Get the actual scroll container inside ScrollArea
+    const scrollContainer = consentScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (scrollContainer) {
+      const scrollTop = scrollContainer.scrollTop;
+      const scrollHeight = scrollContainer.scrollHeight;
+      const clientHeight = scrollContainer.clientHeight;
+      const isAtBottom = scrollHeight - scrollTop <= clientHeight + 10;
+      
+      if (isAtBottom) {
+        setConsentScrolled(true);
+      }
     }
   };
   
-  // Also check on mount and when consent modal opens
+  // Check scroll position when consent modal opens and reset state
   useEffect(() => {
-    if (showConsentModal && consentScrollRef.current) {
-      const element = consentScrollRef.current;
-      const checkScroll = () => {
-        const scrollTop = element.scrollTop;
-        const scrollHeight = element.scrollHeight;
-        const clientHeight = element.clientHeight;
-        const isAtBottom = scrollHeight - scrollTop <= clientHeight + 10;
-        if (isAtBottom) {
-          setConsentScrolled(true);
+    if (showConsentModal) {
+      setConsentScrolled(false);
+      setConsentChecked(false);
+      
+      // Check if content fits without scrolling (auto-enable scroll requirement)
+      setTimeout(() => {
+        if (consentScrollRef.current) {
+          const scrollContainer = consentScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+          if (scrollContainer) {
+            const hasScroll = scrollContainer.scrollHeight > scrollContainer.clientHeight;
+            if (!hasScroll) {
+              // Content fits without scrolling, auto-enable
+              setConsentScrolled(true);
+            } else {
+              // Content requires scrolling, check if already at bottom
+              const isAtBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop <= scrollContainer.clientHeight + 10;
+              if (isAtBottom) {
+                setConsentScrolled(true);
+              }
+            }
+          }
         }
-      };
-      
-      // Check immediately
-      checkScroll();
-      
-      // Also check on scroll
-      element.addEventListener('scroll', checkScroll);
-      return () => element.removeEventListener('scroll', checkScroll);
+      }, 100);
     }
   }, [showConsentModal]);
 

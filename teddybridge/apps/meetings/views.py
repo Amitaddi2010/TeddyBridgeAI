@@ -563,12 +563,12 @@ Return ONLY valid JSON, no additional text or markdown code blocks."""
             })
         except json.JSONDecodeError:
             # If JSON parsing fails, store as raw text in chief_complaint
-        CallNote.objects.create(
-            meeting=meeting,
+            CallNote.objects.create(
+                meeting=meeting,
                 chief_complaint=ai_response[:1000],  # Store more characters
                 ai_metadata={'raw_response': ai_response, 'parsed': False}
-        )
-        
+            )
+            
             return Response({
                 'success': True,
                 'notes': {'raw': ai_response},

@@ -644,9 +644,38 @@ export default function Meeting() {
 
   const handleConsentScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
-    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 10;
-    setConsentScrolled(isAtBottom);
+    const scrollTop = target.scrollTop;
+    const scrollHeight = target.scrollHeight;
+    const clientHeight = target.clientHeight;
+    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 10;
+    
+    if (isAtBottom) {
+      setConsentScrolled(true);
+    }
   };
+  
+  // Also check on mount and when consent modal opens
+  useEffect(() => {
+    if (showConsentModal && consentScrollRef.current) {
+      const element = consentScrollRef.current;
+      const checkScroll = () => {
+        const scrollTop = element.scrollTop;
+        const scrollHeight = element.scrollHeight;
+        const clientHeight = element.clientHeight;
+        const isAtBottom = scrollHeight - scrollTop <= clientHeight + 10;
+        if (isAtBottom) {
+          setConsentScrolled(true);
+        }
+      };
+      
+      // Check immediately
+      checkScroll();
+      
+      // Also check on scroll
+      element.addEventListener('scroll', checkScroll);
+      return () => element.removeEventListener('scroll', checkScroll);
+    }
+  }, [showConsentModal]);
 
   // Consent modal
   useEffect(() => {
@@ -872,6 +901,7 @@ export default function Meeting() {
             <Button
               onClick={() => consentMutation.mutate()}
               disabled={!consentScrolled || !consentChecked || consentMutation.isPending}
+              className={(!consentScrolled || !consentChecked) ? "opacity-50 cursor-not-allowed" : ""}
             >
               {consentMutation.isPending ? (
                 <>

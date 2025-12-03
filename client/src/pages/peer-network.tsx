@@ -69,32 +69,101 @@ function ChatDialog({ peerId, peerName }: { peerId: string; peerName: string }) 
   );
 }
 
-function ScheduleDialog({ peerId, peerName }: { peerId: string; peerName: string }) {
+function ScheduleDialog({ peerId, peerName, onSuccess, open, onOpenChange }: { 
+  peerId: string; 
+  peerName: string; 
+  onSuccess?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const createMeeting = async () => {
-    if (!title || !scheduledAt) return;
-    const res = await fetch(getApiUrl("/peers/meetings/create"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ participantId: peerId, title, scheduledAt: new Date(scheduledAt).toISOString() }),
-    });
-    if (res.ok) {
-      toast({ title: "Meeting scheduled successfully" });
-      setTitle("");
-      setScheduledAt("");
+    if (!title || !scheduledAt) {
+      toast({ title: "Please fill in all fields", variant: "destructive" });
+      return;
+    }
+    
+    // Validate that scheduled date is in the future
+    const scheduledDate = new Date(scheduledAt);
+    const now = new Date();
+    if (scheduledDate <= now) {
+      toast({ 
+        title: "Invalid date", 
+        description: "Please schedule the meeting for a future date and time",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const res = await fetch(getApiUrl("/peers/meetings/create"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ 
+          participantId: peerId, 
+          title, 
+          scheduledAt: scheduledDate.toISOString() 
+        }),
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        toast({ 
+          title: "Meeting scheduled successfully", 
+          description: `${peerName} has been notified of the scheduled meeting.` 
+        });
+        setTitle("");
+        setScheduledAt("");
+        if (onOpenChange) onOpenChange(false);
+        if (onSuccess) onSuccess();
+      } else {
+        toast({ 
+          title: "Failed to schedule meeting", 
+          description: data.error || "Please try again",
+          variant: "destructive" 
+        });
+      }
+    } catch (error) {
+      console.error("Error creating peer meeting:", error);
+      toast({ 
+        title: "Failed to schedule meeting", 
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive" 
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      <Input placeholder="Meeting title" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
-      <Button onClick={createMeeting} className="w-full">
-        Schedule Meeting
+      <div>
+        <label className="text-sm font-medium mb-1 block">Meeting Title</label>
+        <Input 
+          placeholder="Enter meeting title" 
+          value={title} 
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
+      <div>
+        <label className="text-sm font-medium mb-1 block">Date & Time</label>
+        <Input 
+          type="datetime-local" 
+          value={scheduledAt} 
+          onChange={(e) => setScheduledAt(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
+      <Button onClick={createMeeting} className="w-full" disabled={isLoading || !title || !scheduledAt}>
+        {isLoading ? "Scheduling..." : "Schedule Meeting"}
       </Button>
     </div>
   );
@@ -112,6 +181,8 @@ export default function PeerNetwork() {
   const [conditionFilter, setConditionFilter] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showAllPeers, setShowAllPeers] = useState(true);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [selectedPeer, setSelectedPeer] = useState<{ id: string; name: string } | null>(null);
 
   const loadFeed = async () => {
     const res = await fetch(getApiUrl("/peers/feed"), { credentials: "include" });
@@ -408,9 +479,20 @@ export default function PeerNetwork() {
                             <ChatDialog peerId={peer.id} peerName={peer.name} />
                           </DialogContent>
                         </Dialog>
-                        <Dialog>
+                        <Dialog open={scheduleDialogOpen && selectedPeer?.id === peer.id} onOpenChange={(open) => {
+                          setScheduleDialogOpen(open);
+                          if (!open) setSelectedPeer(null);
+                        }}>
                           <DialogTrigger asChild>
-                            <Button size="icon" variant="ghost">
+                            <Button 
+                              size="icon" 
+                              variant="ghost" 
+                              title="Schedule Meeting"
+                              onClick={() => {
+                                setSelectedPeer({ id: peer.id, name: peer.name });
+                                setScheduleDialogOpen(true);
+                              }}
+                            >
                               <Calendar className="w-4 h-4" />
                             </Button>
                           </DialogTrigger>
@@ -418,7 +500,16 @@ export default function PeerNetwork() {
                             <DialogHeader>
                               <DialogTitle>Schedule Meeting with {peer.name}</DialogTitle>
                             </DialogHeader>
-                            <ScheduleDialog peerId={peer.id} peerName={peer.name} />
+                            <ScheduleDialog 
+                              peerId={peer.id} 
+                              peerName={peer.name}
+                              open={scheduleDialogOpen}
+                              onOpenChange={setScheduleDialogOpen}
+                              onSuccess={() => {
+                                setScheduleDialogOpen(false);
+                                setSelectedPeer(null);
+                              }}
+                            />
                           </DialogContent>
                         </Dialog>
                       </div>

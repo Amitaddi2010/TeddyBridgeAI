@@ -1,6 +1,6 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -58,17 +58,31 @@ interface Patient {
 
 export default function DoctorAppointments() {
   const { toast } = useToast();
+  const [location] = useLocation();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>(new Date());
   const [rescheduleTime, setRescheduleTime] = useState("09:00");
+  
+  // Extract patientId from URL query params
+  const searchParams = new URLSearchParams(location.split('?')[1] || '');
+  const patientIdFromUrl = searchParams.get('patientId') || '';
+  
   const [newAppointment, setNewAppointment] = useState({
-    patientId: "",
+    patientId: patientIdFromUrl,
     title: "",
     time: "09:00",
   });
+
+  // Update patientId when URL param changes
+  React.useEffect(() => {
+    if (patientIdFromUrl) {
+      setNewAppointment(prev => ({ ...prev, patientId: patientIdFromUrl }));
+      setShowCreateModal(true); // Auto-open create modal if patientId is provided
+    }
+  }, [patientIdFromUrl]);
 
   const { data: appointments, isLoading } = useQuery<Appointment[]>({
     queryKey: ["/api/doctor/appointments"],

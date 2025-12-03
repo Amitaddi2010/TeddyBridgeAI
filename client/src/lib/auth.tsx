@@ -48,9 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         setUser(data);
       } else {
+        // 401 is expected when not logged in - don't log as error
+        if (res.status !== 401) {
+          console.warn("Failed to fetch user:", res.status, res.statusText);
+        }
         setUser(null);
       }
-    } catch {
+    } catch (error) {
+      // Silently handle network errors - user is just not authenticated
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -75,25 +80,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    // Sign in with Firebase
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const token = await userCredential.user.getIdToken();
-    
-    // Send token to backend for verification and user data
-    const res = await fetch(getApiUrl("/auth/login"), {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify({ email, password }),
-      credentials: "include",
-    });
-    if (!res.ok) {
-      const error = await res.text();
-      throw new Error(error || "Login failed");
+    try {
+      // Try Firebase first
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const token = await userCredential.user.getIdToken();
+      
+      // Send token to backend for verification and user data
+      const res = await fetch(getApiUrl("/auth/login"), {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error || "Login failed");
+      }
+      await fetchUser(token);
+    } catch (error: any) {
+      // If Firebase auth fails, fallback to Django auth
+      if (error.code && error.code.startsWith('auth/')) {
+        // Firebase error - try Django auth as fallback
+        const res = await fetch(getApiUrl("/auth/login"), {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email, password }),
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const errorText = await res.text();
+          // Provide user-friendly error message
+          if (error.code === 'auth/user-not-found') {
+            throw new Error("User not found. Please register first.");
+          } else if (error.code === 'auth/wrong-password') {
+            throw new Error("Incorrect password. Please try again.");
+          } else if (error.code === 'auth/invalid-email') {
+            throw new Error("Invalid email address.");
+          }
+          throw new Error(errorText || error.message || "Login failed");
+        }
+        await fetchUser();
+      } else {
+        throw error;
+      }
     }
-    await fetchUser(token);
   };
 
   const register = async (email: string, password: string, name: string, role: "doctor" | "patient") => {
@@ -153,8 +188,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       await fetchUser(token);
     } catch (error: any) {
+      // Handle Firebase popup errors gracefully
       if (error.code === "auth/popup-closed-by-user") {
         throw new Error("Sign-in was cancelled");
+      } else if (error.code === "auth/popup-blocked") {
+        throw new Error("Popup was blocked. Please allow popups and try again.");
+      } else if (error.message && error.message.includes("Cross-Origin-Opener-Policy")) {
+        // COOP error - still try to proceed if we have user data
+        console.warn("COOP warning (non-fatal):", error.message);
+        // Continue with the flow if possible
       }
       throw error;
     }

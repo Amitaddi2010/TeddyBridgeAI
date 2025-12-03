@@ -57,11 +57,15 @@ export default function Login() {
       });
       // Redirect will be handled by useEffect above
     } catch (error) {
-      toast({
-        title: "Login failed",
-        description: error instanceof Error ? error.message : "Invalid credentials",
-        variant: "destructive",
-      });
+      const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
+      // Don't show error toast if user is already logged in (redirecting)
+      if (!user) {
+        toast({
+          title: "Login failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -159,16 +163,23 @@ export default function Login() {
                     setIsGoogleLoading(true);
                     try {
                       await loginWithGoogle(roleParam || "patient");
-                      toast({
-                        title: "Welcome!",
-                        description: "You have successfully signed in with Google.",
-                      });
+                      // Only show success if user isn't already logged in
+                      if (!user) {
+                        toast({
+                          title: "Welcome!",
+                          description: "You have successfully signed in with Google.",
+                        });
+                      }
                     } catch (error) {
-                      toast({
-                        title: "Sign-in failed",
-                        description: error instanceof Error ? error.message : "Failed to sign in with Google",
-                        variant: "destructive",
-                      });
+                      const errorMessage = error instanceof Error ? error.message : "Failed to sign in with Google";
+                      // Don't show error for user cancellation
+                      if (!errorMessage.toLowerCase().includes("cancelled") && !errorMessage.toLowerCase().includes("cancel")) {
+                        toast({
+                          title: "Sign-in failed",
+                          description: errorMessage,
+                          variant: "destructive",
+                        });
+                      }
                     } finally {
                       setIsGoogleLoading(false);
                     }

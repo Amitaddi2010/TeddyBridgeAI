@@ -301,7 +301,7 @@ export default function Meeting() {
           });
           localVideoTrackRef.current = videoTrack;
           localTracks.push(videoTrack);
-        } catch (err) {
+    } catch (err) {
           console.error("Failed to create video track:", err);
         }
       }
@@ -346,7 +346,7 @@ export default function Meeting() {
         }
       });
       
-      setParticipants(new Set(room.participants.map((p: any) => p.identity)));
+      setParticipants(new Set(Array.from(room.participants.values()).map((p: any) => p.identity)));
       setIsJoined(true);
       
     } catch (err: any) {
@@ -689,7 +689,7 @@ export default function Meeting() {
     );
   }
 
-  return (
+    return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col">
       {/* Header */}
       <div className="bg-black/90 backdrop-blur-lg border-b border-white/10 p-4 relative z-20">
@@ -708,7 +708,7 @@ export default function Meeting() {
                 RECORDING
               </Badge>
             )}
-          </div>
+            </div>
           <div className="flex items-center gap-2">
             {!isAudioOnly && (
               <Button
@@ -792,15 +792,15 @@ export default function Meeting() {
 
           {/* Video On/Off (only show if not audio-only) */}
           {!isAudioOnly && (
-            <Button
-              variant={isVideoOn ? "secondary" : "destructive"}
-              size="icon"
+          <Button
+            variant={isVideoOn ? "secondary" : "destructive"}
+            size="icon"
               className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
               onClick={toggleVideo}
-              data-testid="button-toggle-video"
-            >
-              {isVideoOn ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
-            </Button>
+            data-testid="button-toggle-video"
+          >
+            {isVideoOn ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
+          </Button>
           )}
 
           {/* Recording (only for doctors) */}
@@ -859,16 +859,16 @@ export default function Meeting() {
             </div>
           </ScrollArea>
           <DialogFooter className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Checkbox
+          <div className="flex items-center gap-2">
+            <Checkbox
                 id="consent-checkbox"
-                checked={consentChecked}
-                onCheckedChange={(checked) => setConsentChecked(checked as boolean)}
+              checked={consentChecked}
+              onCheckedChange={(checked) => setConsentChecked(checked as boolean)}
               />
               <Label htmlFor="consent-checkbox" className="text-sm">
                 I have read and agree to the consent terms
-              </Label>
-            </div>
+            </Label>
+          </div>
             <Button
               onClick={() => consentMutation.mutate()}
               disabled={!consentScrolled || !consentChecked || consentMutation.isPending}

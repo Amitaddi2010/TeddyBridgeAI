@@ -38,11 +38,17 @@ export default function Settings() {
 
   const [profile, setProfile] = useState({
     name: user?.name || "",
+    username: user?.username || "",
     specialty: user?.doctor?.specialty || "",
+    city: user?.doctor?.city || "",
     licenseNumber: user?.doctor?.licenseNumber || "",
     bio: user?.doctor?.bio || "",
     phone: user?.patient?.phone || "",
     address: user?.patient?.address || "",
+    gender: user?.patient?.gender || "",
+    age: user?.patient?.age?.toString() || "",
+    procedure: user?.patient?.procedure || "",
+    connectToPeers: user?.patient?.connectToPeers || false,
     medicalConditions: (user?.patient?.medicalConditions || []) as string[],
   });
   const [newCondition, setNewCondition] = useState("");
@@ -51,11 +57,17 @@ export default function Settings() {
     if (user) {
       setProfile({
         name: user.name || "",
+        username: user.username || "",
         specialty: user.doctor?.specialty || "",
+        city: user.doctor?.city || "",
         licenseNumber: user.doctor?.licenseNumber || "",
         bio: user.doctor?.bio || "",
         phone: user.patient?.phone || "",
         address: user.patient?.address || "",
+        gender: user.patient?.gender || "",
+        age: user.patient?.age?.toString() || "",
+        procedure: user.patient?.procedure || "",
+        connectToPeers: user.patient?.connectToPeers || false,
         medicalConditions: (user.patient?.medicalConditions || []) as string[],
       });
     }
@@ -95,8 +107,8 @@ export default function Settings() {
       const res = await apiRequest("PATCH", "/api/user/profile", data);
       return res.json();
     },
-    onSuccess: () => {
-      refetch();
+    onSuccess: async () => {
+      await refetch();
       toast({
         title: "Profile Updated",
         description: "Your profile has been saved successfully.",
@@ -307,29 +319,54 @@ export default function Settings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="username">Username</Label>
                   <Input
-                    id="email"
-                    value={user?.email || ""}
-                    disabled
-                    className="bg-muted"
+                    id="username"
+                    value={profile.username}
+                    onChange={(e) => setProfile({ ...profile, username: e.target.value })}
+                    placeholder="Display username"
+                    data-testid="input-username"
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  value={user?.email || ""}
+                  disabled
+                  className="bg-muted"
+                />
+                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
 
               {user?.role === "doctor" && (
                 <>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="specialty">Specialty</Label>
+                      <Label htmlFor="specialty">Specialty <span className="text-destructive">*</span></Label>
                       <Input
                         id="specialty"
                         placeholder="e.g., Family Medicine"
                         value={profile.specialty}
                         onChange={(e) => setProfile({ ...profile, specialty: e.target.value })}
                         data-testid="input-specialty"
+                        required
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="city">City <span className="text-destructive">*</span></Label>
+                      <Input
+                        id="city"
+                        placeholder="e.g., New York"
+                        value={profile.city}
+                        onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                        data-testid="input-city"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="license">License Number</Label>
                       <Input
@@ -357,6 +394,55 @@ export default function Settings() {
 
               {user?.role === "patient" && (
                 <>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="gender">Gender <span className="text-destructive">*</span></Label>
+                      <Input
+                        id="gender"
+                        placeholder="e.g., Male, Female, Other"
+                        value={profile.gender}
+                        onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
+                        data-testid="input-gender"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="age">Age <span className="text-destructive">*</span></Label>
+                      <Input
+                        id="age"
+                        type="number"
+                        placeholder="e.g., 30"
+                        value={profile.age}
+                        onChange={(e) => setProfile({ ...profile, age: e.target.value })}
+                        data-testid="input-age"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="procedure">Procedure</Label>
+                    <Input
+                      id="procedure"
+                      placeholder="Medical procedure or treatment"
+                      value={profile.procedure}
+                      onChange={(e) => setProfile({ ...profile, procedure: e.target.value })}
+                      data-testid="input-procedure"
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="connectToPeers"
+                      checked={profile.connectToPeers}
+                      onChange={(e) => setProfile({ ...profile, connectToPeers: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300"
+                      data-testid="input-connect-peers"
+                    />
+                    <Label htmlFor="connectToPeers" className="cursor-pointer">
+                      Allow connection with other patients
+                    </Label>
+                  </div>
+                  <Separator />
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="phone">Phone Number</Label>

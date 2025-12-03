@@ -331,6 +331,7 @@ def get_current_user(request):
                 'id': str(user.id),
                 'email': user.email or '',
                 'name': getattr(user, 'name', '') or '',
+                'username': getattr(user, 'username', None) or None,
                 'role': getattr(user, 'role', '') or '',
                 'avatarUrl': getattr(user, 'avatar_url', None) or None,
             }
@@ -381,6 +382,7 @@ def get_current_user(request):
                 data['doctor'] = {
                     'id': str(doctor.id),
                     'specialty': getattr(doctor, 'specialty', None) or None,
+                    'city': getattr(doctor, 'city', None) or None,
                     'licenseNumber': getattr(doctor, 'license_number', None) or None,
                     'bio': getattr(doctor, 'bio', None) or None,
                 }
@@ -414,6 +416,10 @@ def get_current_user(request):
                 
                 data['patient'] = {
                     'id': str(patient.id),
+                    'gender': getattr(patient, 'gender', None) or None,
+                    'age': getattr(patient, 'age', None),
+                    'procedure': getattr(patient, 'procedure', None) or None,
+                    'connectToPeers': getattr(patient, 'connect_to_peers', False),
                     'phone': getattr(patient, 'phone', None) or None,
                     'address': getattr(patient, 'address', None) or None,
                     'medicalConditions': medical_conditions,
@@ -575,10 +581,16 @@ def update_profile(request):
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     user = request.user
     
+    # Update user fields
     if 'name' in request.data:
         user.name = request.data['name']
+    if 'username' in request.data:
+        user.username = request.data['username'] or None
     if 'avatar_url' in request.data:
         user.avatar_url = request.data['avatar_url']
     user.save()
@@ -587,23 +599,41 @@ def update_profile(request):
         if user.role == 'doctor':
             doctor = user.doctor_profile
             if 'specialty' in request.data:
-                doctor.specialty = request.data['specialty']
+                doctor.specialty = request.data['specialty'] or None
+            if 'city' in request.data:
+                doctor.city = request.data['city'] or None
             if 'licenseNumber' in request.data:
-                doctor.license_number = request.data['licenseNumber']
+                doctor.license_number = request.data['licenseNumber'] or None
             if 'bio' in request.data:
-                doctor.bio = request.data['bio']
+                doctor.bio = request.data['bio'] or None
             doctor.save()
         elif user.role == 'patient':
             patient = user.patient_profile
+            if 'gender' in request.data:
+                patient.gender = request.data['gender'] or None
+            if 'age' in request.data:
+                age_str = request.data['age']
+                if age_str:
+                    try:
+                        patient.age = int(age_str) if age_str else None
+                    except (ValueError, TypeError):
+                        patient.age = None
+                else:
+                    patient.age = None
+            if 'procedure' in request.data:
+                patient.procedure = request.data['procedure'] or None
+            if 'connectToPeers' in request.data:
+                patient.connect_to_peers = bool(request.data['connectToPeers'])
             if 'phone' in request.data:
-                patient.phone = request.data['phone']
+                patient.phone = request.data['phone'] or None
             if 'address' in request.data:
-                patient.address = request.data['address']
+                patient.address = request.data['address'] or None
             if 'medicalConditions' in request.data:
                 patient.medical_conditions = request.data['medicalConditions']
             patient.save()
     except Exception as e:
-        pass
+        logger.error(f"Error updating profile for user {user.id}: {str(e)}")
+        return Response({'error': f'Failed to update profile: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     return Response({'success': True})
 

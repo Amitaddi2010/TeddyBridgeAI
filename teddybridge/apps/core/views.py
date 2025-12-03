@@ -295,10 +295,30 @@ def user_logout(request):
     return Response({'success': True})
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def get_current_user(request):
     import logging
     logger = logging.getLogger(__name__)
     
+    # Check if Firebase token is provided (for Firebase authentication)
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        firebase_token = auth_header.split('Bearer ')[1]
+        if FIREBASE_AVAILABLE:
+            firebase_user = get_user_from_token(firebase_token)
+            if firebase_user:
+                email = firebase_user.get('email')
+                try:
+                    user = User.objects.get(email=email)
+                    # Create session for the user
+                    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+                    request.session.save()
+                    # Continue to return user data below
+                except User.DoesNotExist:
+                    # User doesn't exist in Django yet - return 401 to trigger registration
+                    return Response({'error': 'User not found. Please register first.'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    # Check Django session authentication
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
     

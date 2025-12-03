@@ -1,7 +1,7 @@
 // Helper script to format Firebase credentials JSON for Render environment variable
 // Usage: node format-firebase-credentials.js <path-to-service-account-key.json>
 
-import fs from 'fs';
+const fs = require('fs');
 
 if (process.argv.length < 3) {
   console.error('Usage: node format-firebase-credentials.js <path-to-service-account-key.json>');
@@ -31,4 +31,3 @@ try {
   console.error('❌ Error:', error.message);
   process.exit(1);
 }
-

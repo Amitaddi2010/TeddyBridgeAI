@@ -128,10 +128,20 @@ The `firebase-admin` package is already added to `requirements.txt`. After deplo
 - Make sure `VITE_FIREBASE_API_KEY` and `VITE_FIREBASE_APP_ID` are set in Vercel environment variables
 - Verify the values match your Firebase project settings
 
-### Backend: "Firebase authentication not configured"
-- Check that `FIREBASE_CREDENTIALS_JSON` or `FIREBASE_CREDENTIALS_PATH` is set in Render
-- Verify the JSON is valid and contains all required fields
-- Check Render logs for Firebase initialization errors
+### Backend: "Firebase authentication not configured" or 503 Service Unavailable
+- **Check that `FIREBASE_CREDENTIALS_JSON` is set in Render**
+  - Go to Render Dashboard → Your Service → Environment
+  - Verify `FIREBASE_CREDENTIALS_JSON` exists and contains your service account JSON
+  - The JSON must be a **single-line string** with no line breaks
+  - Use the `format-firebase-credentials.js` script to format it correctly
+- **Verify the JSON is valid**:
+  - Check Render logs for Firebase initialization errors
+  - Look for messages like "Failed to parse FIREBASE_CREDENTIALS_JSON" or "Firebase Admin SDK initialization failed"
+- **Common issues**:
+  - JSON has line breaks (must be single-line)
+  - Missing required fields in JSON (type, project_id, private_key, client_email, etc.)
+  - JSON contains extra characters or formatting
+- **After fixing, redeploy your service** to apply changes
 
 ### Google Sign-In Popup Blocked
 - Make sure your domain is added to authorized domains in Firebase Console

@@ -558,12 +558,24 @@ export default function Register() {
                         title: "Account created!",
                         description: "Welcome to TeddyBridge. Your account has been created successfully.",
                       });
-                    } catch (error) {
-                      toast({
-                        title: "Registration failed",
-                        description: error instanceof Error ? error.message : "Failed to sign up with Google",
-                        variant: "destructive",
-                      });
+                    } catch (error: any) {
+                      const errorMessage = error instanceof Error ? error.message : "Failed to sign up with Google";
+                      
+                      // Handle Firebase configuration errors
+                      if (error.isConfigurationError) {
+                        toast({
+                          title: "Configuration Error",
+                          description: "Firebase authentication is not properly configured. Please contact the administrator.",
+                          variant: "destructive",
+                          duration: 10000,
+                        });
+                      } else {
+                        toast({
+                          title: "Registration failed",
+                          description: errorMessage,
+                          variant: "destructive",
+                        });
+                      }
                     } finally {
                       setIsGoogleLoading(false);
                     }

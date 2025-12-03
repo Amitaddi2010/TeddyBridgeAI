@@ -188,6 +188,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Handle error responses
       if (!res.ok) {
+        // 503 Service Unavailable usually means Firebase is not configured
+        if (res.status === 503) {
+          const errorMessage = data.message || data.error || "Firebase authentication is not configured on the server. Please contact support.";
+          const error: any = new Error(errorMessage);
+          error.isConfigurationError = true;
+          throw error;
+        }
         const errorMessage = data.message || data.error || "Google sign-in failed";
         throw new Error(errorMessage);
       }

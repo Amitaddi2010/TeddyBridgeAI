@@ -174,6 +174,17 @@ export default function Login() {
                     } catch (error: any) {
                       const errorMessage = error instanceof Error ? error.message : "Failed to sign in with Google";
                       
+                      // Handle Firebase configuration errors
+                      if (error.isConfigurationError) {
+                        toast({
+                          title: "Configuration Error",
+                          description: "Firebase authentication is not properly configured. Please contact the administrator.",
+                          variant: "destructive",
+                          duration: 10000,
+                        });
+                        return;
+                      }
+                      
                       // Handle role selection requirement
                       if (error.requiresRoleSelection || errorMessage === "ROLE_SELECTION_REQUIRED") {
                         // Redirect to register page with Google sign-in data

@@ -276,8 +276,14 @@ def upload_recording(request, meeting_id):
         
         meeting = Meeting.objects.get(id=meeting_id)
         
+        # Check for both 'audio' and 'recording' field names
+        audio_file = None
         if 'audio' in request.FILES:
             audio_file = request.FILES['audio']
+        elif 'recording' in request.FILES:
+            audio_file = request.FILES['recording']
+        
+        if audio_file:
             
             assemblyai_key = os.getenv('ASSEMBLYAI_API_KEY')
             if not assemblyai_key:
@@ -346,13 +352,17 @@ Provide:
             else:
                 meeting.status = 'transcription_failed'
         else:
+            logger.warning(f"No recording file found in request for meeting {meeting_id}")
             meeting.status = 'completed'
+            meeting.ended_at = timezone.now()
+            meeting.save()
         
-        meeting.ended_at = timezone.now()
-        meeting.save()
+        if not meeting.ended_at:
+            meeting.ended_at = timezone.now()
+            meeting.save()
         
-        logger.info(f"Meeting {meeting_id} marked as completed")
-        return Response({'success': True})
+        logger.info(f"Meeting {meeting_id} upload_recording endpoint completed, status: {meeting.status}")
+        return Response({'success': True, 'status': meeting.status})
     except Exception as e:
         logger.error(f'Upload recording error for meeting {meeting_id}: {str(e)}')
         import traceback
@@ -461,12 +471,12 @@ Return ONLY valid JSON, no additional text or markdown code blocks."""
             })
         except json.JSONDecodeError:
             # If JSON parsing fails, store as raw text in chief_complaint
-            CallNote.objects.create(
-                meeting=meeting,
+        CallNote.objects.create(
+            meeting=meeting,
                 chief_complaint=ai_response[:1000],  # Store more characters
                 ai_metadata={'raw_response': ai_response, 'parsed': False}
-            )
-            
+        )
+        
             return Response({
                 'success': True,
                 'notes': {'raw': ai_response},

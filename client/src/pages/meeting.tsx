@@ -576,13 +576,11 @@ export default function Meeting() {
           if (!notifiedParticipantsRef.current.has(participant.identity)) {
             notifiedParticipantsRef.current.add(participant.identity);
             
+            // Notify backend only once (silently, no console logs)
             const participantName = getParticipantName();
-            
-            // Silent notification - only log to console, don't show toast
-            console.log(`Participant ${participantName} joined the call`);
-            
-            // Notify backend only once (silently)
-            notifyParticipantEvent('joined', participantName).catch(console.error);
+            notifyParticipantEvent('joined', participantName).catch(() => {
+              // Silent error handling
+            });
           }
           
           // Update participant count (only unique identities)
@@ -726,11 +724,8 @@ export default function Meeting() {
           }
         });
         
-        // Silent connection - no toast notification to avoid interruptions
-        if (!hasShownConnectedToastRef.current) {
-          hasShownConnectedToastRef.current = true;
-          console.log(isVideoOn ? "Video call connected." : "Audio call connected.");
-        }
+        // Silent connection - no console logs to avoid clutter
+        // Connection is established, tracks are published and subscribed
         
         // Mark event handlers as attached
         eventHandlersAttachedRef.current = true;

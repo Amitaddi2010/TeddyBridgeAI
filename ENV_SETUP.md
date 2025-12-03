@@ -34,6 +34,13 @@ ALLOWED_HOSTS=localhost,127.0.0.1,*
 GROQ_API_KEY=your-groq-api-key-here
 ASSEMBLYAI_API_KEY=your-assemblyai-api-key-here
 
+# Firebase Authentication (Frontend - Vercel)
+VITE_FIREBASE_API_KEY=your-firebase-api-key-here
+VITE_FIREBASE_APP_ID=your-firebase-app-id-here
+
+# Firebase Admin SDK (Backend - Render)
+FIREBASE_CREDENTIALS_JSON={"type":"service_account","project_id":"teddybridge-f3f2c",...}
+
 # Superuser (Optional - for automatic superuser creation)
 DJANGO_SUPERUSER_EMAIL=admin@example.com
 DJANGO_SUPERUSER_PASSWORD=admin123

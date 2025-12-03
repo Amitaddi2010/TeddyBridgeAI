@@ -124,9 +124,23 @@ The `firebase-admin` package is already added to `requirements.txt`. After deplo
 
 ## Troubleshooting
 
-### Frontend: "Firebase: Error (auth/configuration-not-found)"
-- Make sure `VITE_FIREBASE_API_KEY` and `VITE_FIREBASE_APP_ID` are set in Vercel environment variables
-- Verify the values match your Firebase project settings
+### Frontend: "Firebase: Error (auth/configuration-not-found)" or 400 Bad Request
+- **Make sure `VITE_FIREBASE_API_KEY` and `VITE_FIREBASE_APP_ID` are set in Vercel environment variables**
+  - Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+  - Verify both variables exist and are set correctly
+- **Get the correct values from Firebase Console:**
+  1. Go to [Firebase Console](https://console.firebase.google.com/)
+  2. Select your project: `teddybridge-f3f2c`
+  3. Click ⚙️ → Project settings
+  4. Scroll to "Your apps" section
+  5. Click on your web app (or create one if needed)
+  6. Copy the `apiKey` value → Set as `VITE_FIREBASE_API_KEY`
+  7. Copy the `appId` value → Set as `VITE_FIREBASE_APP_ID`
+- **Common issues:**
+  - API key is incorrect or from a different project
+  - Environment variables not set in Vercel
+  - Need to rebuild/redeploy Vercel after setting environment variables
+- **After setting variables, redeploy your Vercel project** to apply changes
 
 ### Backend: "Firebase authentication not configured" or 503 Service Unavailable
 - **Check that `FIREBASE_CREDENTIALS_JSON` is set in Render**

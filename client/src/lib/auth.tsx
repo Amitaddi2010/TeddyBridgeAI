@@ -103,6 +103,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       // If Firebase auth fails, fallback to Django auth
       if (error.code && error.code.startsWith('auth/')) {
+        // Check for configuration errors
+        if (error.code === 'auth/invalid-api-key' || error.code === 'auth/api-key-not-valid.-please-pass-a-valid-api-key.') {
+          throw new Error("Firebase API key is invalid. Please contact the administrator.");
+        }
+        if (error.code === 'auth/configuration-not-found') {
+          throw new Error("Firebase is not properly configured. Please contact the administrator.");
+        }
+        
         // Firebase error - try Django auth as fallback
         const res = await fetch(getApiUrl("/auth/login"), {
           method: "POST",
@@ -228,6 +236,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Sign-in was cancelled");
       } else if (error.code === "auth/popup-blocked") {
         throw new Error("Popup was blocked. Please allow popups and try again.");
+      } else if (error.code === "auth/invalid-api-key" || error.code === "auth/api-key-not-valid.-please-pass-a-valid-api-key.") {
+        throw new Error("Firebase API key is invalid. Please contact the administrator.");
+      } else if (error.code === "auth/configuration-not-found") {
+        throw new Error("Firebase is not properly configured. Please contact the administrator.");
       } else if (error.message && error.message.includes("Cross-Origin-Opener-Policy")) {
         // COOP error - still try to proceed if we have user data
         console.warn("COOP warning (non-fatal):", error.message);

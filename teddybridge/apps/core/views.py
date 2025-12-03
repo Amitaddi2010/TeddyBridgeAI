@@ -163,7 +163,27 @@ def google_auth(request):
     
     if not FIREBASE_AVAILABLE:
         logger.error("Firebase authentication not available - module not imported")
-        return Response({'error': 'Firebase authentication not configured'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({
+            'error': 'Firebase authentication not configured',
+            'message': 'Firebase Admin SDK is not installed. Please install firebase-admin package.'
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    
+    # Check if Firebase is actually initialized
+    try:
+        from .firebase_auth import initialize_firebase
+        firebase_app = initialize_firebase()
+        if not firebase_app or firebase_app is False:
+            logger.error("Firebase Admin SDK initialization failed - credentials not configured")
+            return Response({
+                'error': 'Firebase authentication not configured',
+                'message': 'Firebase credentials not found. Please set FIREBASE_CREDENTIALS_JSON environment variable.'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    except Exception as e:
+        logger.error(f"Error checking Firebase initialization: {str(e)}")
+        return Response({
+            'error': 'Firebase authentication error',
+            'message': f'Firebase initialization error: {str(e)}'
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
     firebase_token = auth_header.split('Bearer ')[1]
     logger.info(f"Attempting to verify Firebase token (length: {len(firebase_token)})")

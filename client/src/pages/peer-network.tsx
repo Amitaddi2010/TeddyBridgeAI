@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Heart, MessageCircle, Send, Users, Calendar, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Send, Users, Calendar, Trash2, Video, Clock, CheckCircle, XCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { getApiUrl } from "@/lib/api-config";
+import { Badge } from "@/components/ui/badge";
 
 function ChatDialog({ peerId, peerName }: { peerId: string; peerName: string }) {
   const { user } = useAuth();
@@ -183,6 +184,7 @@ export default function PeerNetwork() {
   const [showAllPeers, setShowAllPeers] = useState(true);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [selectedPeer, setSelectedPeer] = useState<{ id: string; name: string } | null>(null);
+  const [peerMeetings, setPeerMeetings] = useState<any[]>([]);
 
   const loadFeed = async () => {
     const res = await fetch(getApiUrl("/peers/feed"), { credentials: "include" });
@@ -259,6 +261,14 @@ export default function PeerNetwork() {
     setAllPeers(data);
   };
 
+  const loadPeerMeetings = async () => {
+    const res = await fetch(getApiUrl("/peers/meetings"), { credentials: "include" });
+    if (res.ok) {
+      const data = await res.json();
+      setPeerMeetings(data);
+    }
+  };
+
   const searchPeers = async () => {
     const params = new URLSearchParams();
     if (conditionFilter) params.append('condition', conditionFilter);
@@ -271,6 +281,7 @@ export default function PeerNetwork() {
   useEffect(() => {
     loadFeed();
     loadAllPeers();
+    loadPeerMeetings();
     const interval = setInterval(loadFeed, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -286,6 +297,90 @@ export default function PeerNetwork() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Feed */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Scheduled Meetings */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5" />
+                  Scheduled Meetings
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {peerMeetings.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No scheduled meetings</p>
+                ) : (
+                  <div className="space-y-3">
+                    {peerMeetings.map((meeting) => {
+                      const otherPerson = meeting.isOrganizer ? meeting.participantName : meeting.organizerName;
+                      const getStatusBadge = (status: string) => {
+                        switch (status) {
+                          case "scheduled":
+                            return <Badge className="gap-1"><Clock className="w-3 h-3" /> Scheduled</Badge>;
+                          case "in_progress":
+                            return <Badge variant="secondary" className="gap-1"><Video className="w-3 h-3" /> In Progress</Badge>;
+                          case "completed":
+                            return <Badge variant="outline" className="gap-1"><CheckCircle className="w-3 h-3" /> Completed</Badge>;
+                          case "cancelled":
+                            return <Badge variant="destructive" className="gap-1"><XCircle className="w-3 h-3" /> Cancelled</Badge>;
+                          default:
+                            return <Badge variant="secondary">{status}</Badge>;
+                        }
+                      };
+                      return (
+                        <div key={meeting.id} className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h4 className="font-semibold">{meeting.title}</h4>
+                              {getStatusBadge(meeting.status)}
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-1">
+                              With: {otherPerson}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(meeting.scheduledAt).toLocaleString()}
+                            </p>
+                          </div>
+                          {meeting.status === "scheduled" && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(getApiUrl(`/peers/meetings/${meeting.id}/start`), {
+                                    method: "POST",
+                                    credentials: "include",
+                                  });
+                                  const data = await res.json();
+                                  if (res.ok) {
+                                    // Redirect to the meeting page
+                                    window.location.href = data.meetingUrl || `/meeting/${data.id}`;
+                                  } else {
+                                    toast({
+                                      title: "Failed to start meeting",
+                                      description: data.error || "Please try again",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                } catch (error) {
+                                  toast({
+                                    title: "Failed to start meeting",
+                                    description: "Please try again",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                            >
+                              <Video className="w-4 h-4 mr-2" />
+                              Start Meeting
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
             {/* Create Post */}
             <Card>
               <CardContent className="pt-6">
@@ -508,6 +603,7 @@ export default function PeerNetwork() {
                               onSuccess={() => {
                                 setScheduleDialogOpen(false);
                                 setSelectedPeer(null);
+                                loadPeerMeetings();
                               }}
                             />
                           </DialogContent>

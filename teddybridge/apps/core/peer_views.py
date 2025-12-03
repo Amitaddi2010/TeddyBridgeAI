@@ -303,6 +303,89 @@ def create_peer_meeting(request):
         logger.error(f"Traceback: {traceback.format_exc()}")
         return Response({'error': f'Failed to create peer meeting: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+@api_view(['POST'])
+def start_peer_meeting(request, meeting_id):
+    """Start a peer meeting by converting it to a Meeting for video calls (doctor-doctor only)"""
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        from teddybridge.apps.meetings.models import Meeting
+        from teddybridge.apps.meetings.twilio_utils import generate_twilio_token
+        
+        peer_meeting = PeerMeeting.objects.select_related('organizer', 'participant').get(id=meeting_id)
+        
+        # Only allow starting if user is organizer or participant
+        if peer_meeting.organizer.id != request.user.id and peer_meeting.participant.id != request.user.id:
+            return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Only doctor-doctor meetings can be started (patient-patient meetings don't use video calls)
+        if peer_meeting.organizer.role != 'doctor' or peer_meeting.participant.role != 'doctor':
+            return Response({'error': 'Only doctor-doctor peer meetings can be started as video calls'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if meeting already exists
+        try:
+            existing_meeting = Meeting.objects.filter(
+                doctor__user=peer_meeting.organizer,
+                patient=None,
+                title=peer_meeting.title
+            ).first()
+            
+            if existing_meeting:
+                # Update peer meeting status
+                peer_meeting.status = 'in_progress'
+                peer_meeting.meeting_url = f'/meeting/{existing_meeting.id}'
+                peer_meeting.save()
+                
+                return Response({
+                    'id': str(existing_meeting.id),
+                    'meetingUrl': f'/meeting/{existing_meeting.id}',
+                })
+        except:
+            pass
+        
+        # Get doctor profiles
+        organizer_doctor = peer_meeting.organizer.doctor_profile
+        if not organizer_doctor:
+            return Response({'error': 'Organizer doctor profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Create Meeting record (doctor-doctor: use organizer as doctor, patient=None)
+        meeting = Meeting.objects.create(
+            doctor=organizer_doctor,
+            patient=None,  # No patient for doctor-doctor meetings
+            title=peer_meeting.title,
+            scheduled_at=peer_meeting.scheduled_at,
+            status='in_progress'
+        )
+        
+        # Update peer meeting
+        peer_meeting.status = 'in_progress'
+        peer_meeting.meeting_url = f'/meeting/{meeting.id}'
+        peer_meeting.save()
+        
+        # Create notification for the other doctor
+        other_doctor = peer_meeting.participant if peer_meeting.organizer.id == request.user.id else peer_meeting.organizer
+        create_notification(
+            user=other_doctor,
+            notification_type='call',
+            title='Peer Meeting Started',
+            message=f'{request.user.name} has started the meeting: {peer_meeting.title}',
+            link=f'/meeting/{meeting.id}'
+        )
+        
+        return Response({
+            'id': str(meeting.id),
+            'meetingUrl': f'/meeting/{meeting.id}',
+        })
+        
+    except PeerMeeting.DoesNotExist:
+        return Response({'error': 'Peer meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error starting peer meeting: {str(e)}")
+        return Response({'error': f'Failed to start peer meeting: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @api_view(['DELETE'])
 def delete_peer_meeting(request, meeting_id):
     """Delete a peer meeting"""

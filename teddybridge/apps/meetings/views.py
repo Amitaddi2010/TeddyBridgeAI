@@ -151,11 +151,16 @@ def get_meeting(request, meeting_id):
         if not token:
             logger.warning(f"Twilio token generation failed for meeting {meeting.id}, user: {request.user.email}")
             # Return error details in response for debugging
+            # Determine meeting type: patient-doctor or doctor-doctor
+            meeting_type = 'doctor-doctor' if meeting.patient is None else 'patient-doctor'
+            recording_enabled = meeting_type == 'doctor-doctor'
+            
             return Response({
                 'id': str(meeting.id),
                 'title': meeting.title,
                 'doctorName': meeting.doctor.user.name,
                 'patientName': meeting.patient.user.name if meeting.patient else None,
+                'participantDoctorName': None,
                 'status': meeting.status,
                 'scheduledAt': meeting.scheduled_at.isoformat() if meeting.scheduled_at else None,
                 'hasConsented': consent.status == 'granted' if consent else False,
@@ -163,21 +168,31 @@ def get_meeting(request, meeting_id):
                 'twilioToken': None,
                 'twilioError': 'Token generation failed. Check server logs and Twilio credentials.',
                 'roomName': room_name,
+                'meetingType': meeting_type,
+                'recordingEnabled': recording_enabled,
             })
         
         logger.info(f"Twilio token generated successfully for meeting {meeting.id}")
+        
+        # Determine meeting type: patient-doctor or doctor-doctor
+        meeting_type = 'doctor-doctor' if meeting.patient is None else 'patient-doctor'
+        # Recording is only enabled for doctor-doctor meetings
+        recording_enabled = meeting_type == 'doctor-doctor'
         
         return Response({
             'id': str(meeting.id),
             'title': meeting.title,
             'doctorName': meeting.doctor.user.name,
             'patientName': meeting.patient.user.name if meeting.patient else None,
+            'participantDoctorName': None,  # Can be enhanced later if we add participantDoctor field
             'status': meeting.status,
             'scheduledAt': meeting.scheduled_at.isoformat() if meeting.scheduled_at else None,
             'hasConsented': consent.status == 'granted' if consent else False,
             'isRecording': meeting.status == 'in_progress',
             'twilioToken': token,
             'roomName': room_name,
+            'meetingType': meeting_type,
+            'recordingEnabled': recording_enabled,
         })
     except Meeting.DoesNotExist:
         return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)

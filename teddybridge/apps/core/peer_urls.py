@@ -9,6 +9,7 @@ urlpatterns = [
     path('chat/send', peer_views.send_chat_message),
     path('meetings', peer_views.get_peer_meetings),
     path('meetings/create', peer_views.create_peer_meeting),
+    path('meetings/<uuid:meeting_id>/start', peer_views.start_peer_meeting),
     path('meetings/<uuid:meeting_id>', peer_views.delete_peer_meeting),
     path('feed', peer_views.get_feed),
     path('posts/create', peer_views.create_post),

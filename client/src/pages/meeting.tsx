@@ -59,6 +59,8 @@ interface MeetingInfo {
   isRecording: boolean;
   twilioToken?: string;
   roomName?: string;
+  meetingType?: 'patient-doctor' | 'doctor-doctor';
+  recordingEnabled?: boolean;
 }
 
 export default function Meeting() {
@@ -685,9 +687,9 @@ export default function Meeting() {
     }
   }, [showConsentModal]);
 
-  // Consent modal
+  // Consent modal (only show if recording is enabled for this meeting)
   useEffect(() => {
-    if (meetingInfo && !meetingInfo.hasConsented && isJoined && user?.role === "doctor") {
+    if (meetingInfo && meetingInfo.recordingEnabled && !meetingInfo.hasConsented && isJoined && user?.role === "doctor") {
       setShowConsentModal(true);
     }
   }, [meetingInfo, isJoined, user?.role]);
@@ -840,8 +842,8 @@ export default function Meeting() {
           </Button>
           )}
 
-          {/* Recording (only for doctors) */}
-          {user?.role === "doctor" && (
+          {/* Recording (only for doctors and only if recording is enabled for this meeting type) */}
+          {user?.role === "doctor" && meetingInfo?.recordingEnabled && (
             <Button
               variant={isRecording ? "destructive" : "secondary"}
               size="icon"

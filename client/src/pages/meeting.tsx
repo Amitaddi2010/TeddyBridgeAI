@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as TwilioVideo from "twilio-video";
@@ -36,6 +36,7 @@ import {
   Mic,
   MicOff,
   Phone,
+  PhoneOff,
   Circle,
   Settings,
   Loader2,
@@ -43,8 +44,6 @@ import {
   Shield,
   CheckCircle,
   Users,
-  UserPlus,
-  UserMinus,
 } from "lucide-react";
 
 interface MeetingInfo {
@@ -70,45 +69,7 @@ export default function Meeting() {
   const queryClient = useQueryClient();
   const meetingId = params?.id || "";
 
-  // Configure Twilio Video logging to suppress telemetry warnings
-  useEffect(() => {
-    if (typeof TwilioVideo !== 'undefined' && TwilioVideo.Logger) {
-      // Set log level to error to suppress warnings
-      TwilioVideo.Logger.setLevel('error');
-    }
-    
-    // Filter out Twilio telemetry warnings from console
-    const originalWarn = console.warn;
-    const originalError = console.error;
-    
-    console.warn = (...args: any[]) => {
-      // Check if it's a Twilio telemetry warning (string or object)
-      const isTwilioWarning = args.some((arg) => {
-        if (typeof arg === 'string') {
-          return (arg.includes('[connect') || arg.includes('connect #')) && 
-                 (arg.includes('telemetry') || arg.includes('track-stalled'));
-        }
-        if (arg && typeof arg === 'object') {
-          // Check if it's the telemetry object structure
-          return arg.group === 'track-warning-raised' || 
-                 arg.name === 'track-stalled' ||
-                 (arg.level === 'warning' && arg.group === 'track-warning-raised');
-        }
-        return false;
-      });
-      
-      if (!isTwilioWarning) {
-        originalWarn.apply(console, args);
-      }
-    };
-    
-    return () => {
-      // Restore original console methods on cleanup
-      console.warn = originalWarn;
-      console.error = originalError;
-    };
-  }, []);
-
+  // UI State
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [showEndCallModal, setShowEndCallModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -116,29 +77,36 @@ export default function Meeting() {
   const [consentChecked, setConsentChecked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
+  const [isAudioOnly, setIsAudioOnly] = useState(false); // New: Audio-only mode
   const [isRecording, setIsRecording] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [participants, setParticipants] = useState<Set<string>>(new Set());
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const consentScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Refs for stable references
   const roomRef = useRef<any>(null);
   const localVideoTrackRef = useRef<any>(null);
   const localAudioTrackRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
   const isConnectingRef = useRef<boolean>(false);
-  const notifiedParticipantsRef = useRef<Set<string>>(new Set()); // Track notified participants
-  const trackElementsRef = useRef<Map<string, Set<HTMLElement>>>(new Map()); // Track attached elements
-  const eventHandlersAttachedRef = useRef<boolean>(false);
-  const hasShownConnectedToastRef = useRef<boolean>(false);
-  const notificationThrottleRef = useRef<Map<string, number>>(new Map());
-  const participantConnectedHandlerRef = useRef<((participant: any) => void) | null>(null);
-  const participantDisconnectedHandlerRef = useRef<((participant: any) => void) | null>(null);
+  const connectedParticipantsRef = useRef<Set<string>>(new Set());
+  
+  // Track element refs - prevent duplicate attachments
+  const attachedVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const attachedAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const localVideoElementRef = useRef<HTMLVideoElement | null>(null);
+
+  // Configure Twilio logging
+  useEffect(() => {
+    if (typeof TwilioVideo !== 'undefined' && TwilioVideo.Logger) {
+      TwilioVideo.Logger.setLevel('error');
+    }
+  }, []);
 
   const { data: meetingInfo, isLoading, error } = useQuery<MeetingInfo>({
     queryKey: ["/api/meetings", meetingId],
     enabled: !!meetingId,
-    refetchInterval: 5000, // Refetch every 5 seconds to get updated consent status
+    refetchInterval: 5000,
   });
 
   const consentMutation = useMutation({
@@ -149,102 +117,457 @@ export default function Meeting() {
       return res.json();
     },
     onSuccess: () => {
-      setShowConsentModal(false);
-      // Invalidate and refetch meeting info to get updated consent status
       queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
-      toast({
-        title: "Consent Recorded",
-        description: "Your recording consent has been saved.",
-      });
+      setShowConsentModal(false);
     },
   });
 
   const startRecordingMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/meetings/${meetingId}/startRecording`);
+      const res = await apiRequest("POST", `/api/meetings/${meetingId}/startRecording`, {});
       return res.json();
     },
     onSuccess: () => {
-      setIsRecording(true);
-      startClientSideRecording();
-      toast({
-        title: "Recording Started",
-        description: "The consultation is now being recorded.",
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
+    },
+  });
+
+  const stopRecordingMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/meetings/${meetingId}/stopRecording`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings", meetingId] });
     },
   });
 
   const uploadRecordingMutation = useMutation({
-    mutationFn: async (audioBlob: Blob) => {
+    mutationFn: async (blob: Blob) => {
       const formData = new FormData();
-      formData.append("audio", audioBlob, "recording.webm");
-      
-      // Use apiRequest to ensure correct API URL in production
+      formData.append("recording", blob, "recording.webm");
       const res = await apiRequest("POST", `/api/meetings/${meetingId}/uploadRecording`, formData);
-      
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || "Upload failed");
-      }
       return res.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Recording Uploaded",
-        description: "Your recording is being processed for transcription.",
-      });
     },
   });
 
-  const startClientSideRecording = async () => {
+  // Stable track attachment function - prevents duplicate attachments
+  const attachVideoTrack = useCallback((track: any, participantIdentity: string, isLocal: boolean = false) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-      
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      const chunks: Blob[] = [];
-      
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
+      if (isLocal) {
+        // Local video
+        const container = document.getElementById('local-video-container');
+        if (!container) return;
+        
+        // Remove existing local video element
+        if (localVideoElementRef.current) {
+          localVideoElementRef.current.remove();
+          localVideoElementRef.current = null;
         }
-      };
+        
+        const element = track.attach();
+        element.id = 'local-video';
+        element.style.width = '100%';
+        element.style.height = '100%';
+        element.style.objectFit = 'cover';
+        container.appendChild(element);
+        localVideoElementRef.current = element;
+      } else {
+        // Remote video - check if already attached
+        if (attachedVideoElementsRef.current.has(participantIdentity)) {
+          const existing = attachedVideoElementsRef.current.get(participantIdentity);
+          if (existing && existing.srcObject === track.mediaStream) {
+            return; // Already attached with same track
+          }
+          existing?.remove();
+        }
+        
+        const container = document.getElementById('remote-video-container');
+        const fallback = document.getElementById('video-fallback');
+        if (!container) return;
+        
+        const element = track.attach();
+        element.id = `remote-video-${participantIdentity}`;
+        element.style.width = '100%';
+        element.style.height = '100%';
+        element.style.objectFit = 'cover';
+        
+        container.appendChild(element);
+        attachedVideoElementsRef.current.set(participantIdentity, element);
+        
+        if (fallback) {
+          fallback.style.display = 'none';
+        }
+      }
+    } catch (error) {
+      console.error("Error attaching video track:", error);
+    }
+  }, []);
+
+  const attachAudioTrack = useCallback((track: any, participantIdentity: string) => {
+    try {
+      // Check if already attached
+      if (attachedAudioElementsRef.current.has(participantIdentity)) {
+        const existing = attachedAudioElementsRef.current.get(participantIdentity);
+        if (existing && existing.srcObject === track.mediaStream) {
+          return; // Already attached
+        }
+        existing?.remove();
+      }
       
-      recorder.onstop = () => {
-        const audioBlob = new Blob(chunks, { type: "audio/webm" });
-        uploadRecordingMutation.mutate(audioBlob);
-      };
+      const element = track.attach();
+      element.id = `remote-audio-${participantIdentity}`;
+      element.setAttribute('autoplay', 'true');
+      element.setAttribute('playsinline', 'true');
+      element.style.display = 'none';
       
-      recorder.start(1000);
-      setMediaRecorder(recorder);
-    } catch (err) {
+      // Create hidden audio container if needed
+      let audioContainer = document.getElementById('remote-audio-container');
+      if (!audioContainer) {
+        audioContainer = document.createElement('div');
+        audioContainer.id = 'remote-audio-container';
+        audioContainer.style.display = 'none';
+        document.body.appendChild(audioContainer);
+      }
+      
+      audioContainer.appendChild(element);
+      attachedAudioElementsRef.current.set(participantIdentity, element);
+      
+      // Try to play
+      if (element instanceof HTMLAudioElement) {
+        element.play().catch(() => {
+          // Silent fail - autoplay might be blocked
+        });
+      }
+    } catch (error) {
+      console.error("Error attaching audio track:", error);
+    }
+  }, []);
+
+  const detachTrack = useCallback((track: any, participantIdentity: string) => {
+    try {
+      if (track.kind === 'video') {
+        const element = attachedVideoElementsRef.current.get(participantIdentity);
+        if (element) {
+          element.remove();
+          attachedVideoElementsRef.current.delete(participantIdentity);
+          
+          // Show fallback if no remote videos
+          const container = document.getElementById('remote-video-container');
+          const fallback = document.getElementById('video-fallback');
+          if (container && container.children.length === 0 && fallback) {
+            fallback.style.display = 'flex';
+          }
+        }
+      } else {
+        const element = attachedAudioElementsRef.current.get(participantIdentity);
+        if (element) {
+          element.remove();
+          attachedAudioElementsRef.current.delete(participantIdentity);
+        }
+      }
+      track.detach();
+    } catch (error) {
+      console.error("Error detaching track:", error);
+    }
+  }, []);
+
+  // Connect to room
+  const connectToRoom = useCallback(async () => {
+    if (!meetingInfo?.twilioToken || !meetingInfo?.roomName) return;
+    if (isConnectingRef.current || roomRef.current) return;
+    
+    isConnectingRef.current = true;
+    
+    try {
+      const localTracks: any[] = [];
+      
+      // Create audio track
+      try {
+        const audioTrack = await TwilioVideo.createLocalAudioTrack();
+        localAudioTrackRef.current = audioTrack;
+        localTracks.push(audioTrack);
+      } catch (err) {
+        console.error("Failed to create audio track:", err);
+      }
+      
+      // Create video track only if not audio-only mode and video is enabled
+      if (!isAudioOnly && isVideoOn) {
+        try {
+          const videoTrack = await TwilioVideo.createLocalVideoTrack({
+            width: 1280,
+            height: 720,
+          });
+          localVideoTrackRef.current = videoTrack;
+          localTracks.push(videoTrack);
+        } catch (err) {
+          console.error("Failed to create video track:", err);
+        }
+      }
+      
+      // Connect to room
+      const room = await TwilioVideo.connect(meetingInfo.twilioToken!, {
+        name: meetingInfo.roomName!,
+        tracks: localTracks,
+      });
+      
+      roomRef.current = room;
+      
+      // Publish tracks
+      for (const track of localTracks) {
+        await room.localParticipant.publishTrack(track);
+      }
+      
+      // Attach local video if available
+      if (localVideoTrackRef.current) {
+        attachVideoTrack(localVideoTrackRef.current, 'local', true);
+      }
+      
+      // Handle existing participants
+      room.participants.forEach((participant: any) => {
+        handleParticipantConnected(participant);
+      });
+      
+      // Handle new participants
+      room.on('participantConnected', (participant: any) => {
+        handleParticipantConnected(participant);
+      });
+      
+      // Handle participants leaving
+      room.on('participantDisconnected', (participant: any) => {
+        handleParticipantDisconnected(participant);
+      });
+      
+      // Handle local track published
+      room.localParticipant.on('trackPublished', (publication: any) => {
+        if (publication.track && publication.track.kind === 'video' && !isAudioOnly) {
+          attachVideoTrack(publication.track, 'local', true);
+        }
+      });
+      
+      setParticipants(new Set(room.participants.map((p: any) => p.identity)));
+      setIsJoined(true);
+      
+    } catch (err: any) {
+      console.error("Failed to connect:", err);
       toast({
-        title: "Recording Failed",
-        description: "Could not access microphone for recording.",
+        title: "Connection Failed",
+        description: "Could not connect to the call. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      isConnectingRef.current = false;
     }
-  };
+  }, [meetingInfo?.twilioToken, meetingInfo?.roomName, isVideoOn, isAudioOnly, attachVideoTrack, toast]);
 
-  const stopRecording = () => {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      mediaRecorder.stop();
-      setIsRecording(false);
+  // Handle participant connected
+  const handleParticipantConnected = useCallback((participant: any) => {
+    if (connectedParticipantsRef.current.has(participant.identity)) {
+      return; // Already handled
+    }
+    connectedParticipantsRef.current.add(participant.identity);
+    
+    // Handle existing tracks
+    participant.tracks.forEach((publication: any) => {
+      handleTrackPublished(publication, participant);
+    });
+    
+    // Handle new tracks
+    participant.on('trackPublished', (publication: any) => {
+      handleTrackPublished(publication, participant);
+    });
+    
+    setParticipants(prev => {
+      const newSet = new Set(prev);
+      newSet.add(participant.identity);
+      return newSet;
+    });
+  }, []);
+
+  // Handle participant disconnected
+  const handleParticipantDisconnected = useCallback((participant: any) => {
+    connectedParticipantsRef.current.delete(participant.identity);
+    
+    // Clean up all tracks for this participant
+    participant.tracks.forEach((publication: any) => {
+      if (publication.track) {
+        detachTrack(publication.track, participant.identity);
+      }
+    });
+    
+    setParticipants(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(participant.identity);
+      return newSet;
+    });
+  }, [detachTrack]);
+
+  // Handle track published
+  const handleTrackPublished = useCallback((publication: any, participant: any) => {
+    if (publication.track) {
+      // Attach immediately if track is available
+      if (publication.track.kind === 'video') {
+        attachVideoTrack(publication.track, participant.identity);
+      } else {
+        attachAudioTrack(publication.track, participant.identity);
+      }
+    }
+    
+    // Listen for subscription events
+    publication.on('subscribed', (track: any) => {
+      if (track.kind === 'video') {
+        attachVideoTrack(track, participant.identity);
+      } else {
+        attachAudioTrack(track, participant.identity);
+      }
+    });
+    
+    publication.on('unsubscribed', (track: any) => {
+      detachTrack(track, participant.identity);
+    });
+  }, [attachVideoTrack, attachAudioTrack, detachTrack]);
+
+  // Connect when ready
+  useEffect(() => {
+    if (isJoined || !meetingInfo?.roomName || !meetingInfo?.twilioToken) return;
+    if (isConnectingRef.current || roomRef.current) return;
+    
+    connectToRoom();
+  }, [isJoined, meetingInfo?.roomName, meetingInfo?.twilioToken, connectToRoom]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (roomRef.current) {
+        roomRef.current.disconnect();
+        roomRef.current = null;
+      }
+      if (localVideoTrackRef.current) {
+        localVideoTrackRef.current.stop();
+        localVideoTrackRef.current = null;
+      }
+      if (localAudioTrackRef.current) {
+        localAudioTrackRef.current.stop();
+        localAudioTrackRef.current = null;
+      }
+    };
+  }, []);
+
+  // Toggle mute
+  const toggleMute = useCallback(async () => {
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+    
+    if (localAudioTrackRef.current) {
+      if (newMuted) {
+        localAudioTrackRef.current.disable();
+      } else {
+        localAudioTrackRef.current.enable();
+      }
+    }
+    
+    if (roomRef.current) {
+      const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
+      for (const publication of audioPublications) {
+        if (publication.track) {
+          if (newMuted) {
+            publication.track.disable();
+          } else {
+            publication.track.enable();
+          }
+        }
+      }
+    }
+  }, [isMuted]);
+
+  // Toggle video
+  const toggleVideo = useCallback(async () => {
+    if (!roomRef.current) {
+      setIsVideoOn(!isVideoOn);
+      return;
+    }
+    
+    const newVideoState = !isVideoOn;
+    setIsVideoOn(newVideoState);
+    
+    try {
+      if (newVideoState && !isAudioOnly) {
+        // Enable video
+        if (!localVideoTrackRef.current) {
+          const videoTrack = await TwilioVideo.createLocalVideoTrack({
+            width: 1280,
+            height: 720,
+          });
+          localVideoTrackRef.current = videoTrack;
+          await roomRef.current.localParticipant.publishTrack(videoTrack);
+          attachVideoTrack(videoTrack, 'local', true);
+        } else {
+          localVideoTrackRef.current.enable();
+          const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
+            .some(pub => pub.track === localVideoTrackRef.current);
+          if (!isPublished) {
+            await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
+          }
+        }
+      } else {
+        // Disable video
+        if (localVideoTrackRef.current) {
+          localVideoTrackRef.current.disable();
+          const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
+          for (const publication of videoPublications) {
+            if (publication.track === localVideoTrackRef.current) {
+              await roomRef.current.localParticipant.unpublishTrack(publication.track);
+            }
+          }
+          if (localVideoElementRef.current) {
+            localVideoElementRef.current.remove();
+            localVideoElementRef.current = null;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to toggle video:", err);
+      setIsVideoOn(!newVideoState);
+    }
+  }, [isVideoOn, isAudioOnly, attachVideoTrack]);
+
+  // Toggle audio-only mode
+  const toggleAudioOnly = useCallback(() => {
+    const newAudioOnly = !isAudioOnly;
+    setIsAudioOnly(newAudioOnly);
+    
+    if (newAudioOnly) {
+      // Switch to audio-only: disable video
+      setIsVideoOn(false);
+      if (localVideoTrackRef.current && roomRef.current) {
+        localVideoTrackRef.current.disable();
+        const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
+        for (const publication of videoPublications) {
+          if (publication.track === localVideoTrackRef.current) {
+            roomRef.current.localParticipant.unpublishTrack(publication.track);
+          }
+        }
+        if (localVideoElementRef.current) {
+          localVideoElementRef.current.remove();
+          localVideoElementRef.current = null;
+        }
+      }
+    }
+    // If switching back to video mode, user can enable video manually
+  }, [isAudioOnly]);
+
+  // End call
+  const handleEndCall = useCallback(async () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
     if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach((track) => track.stop());
-    }
-  };
-
-  const handleEndCall = () => {
-    if (isRecording) {
-      stopRecording();
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
     }
     if (roomRef.current) {
       roomRef.current.disconnect();
       roomRef.current = null;
     }
-    // Clean up local tracks
     if (localVideoTrackRef.current) {
       localVideoTrackRef.current.stop();
       localVideoTrackRef.current = null;
@@ -254,21 +577,60 @@ export default function Meeting() {
       localAudioTrackRef.current = null;
     }
     setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
-  };
+  }, [user?.role, setLocation]);
 
-  const handleConsentScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 10;
-    setConsentScrolled(isAtBottom);
-  };
+  // Recording functions
+  const startRecording = useCallback(async () => {
+    try {
+      if (roomRef.current) {
+        const stream = new MediaStream();
+        if (localAudioTrackRef.current) {
+          stream.addTrack(localAudioTrackRef.current.mediaStreamTrack);
+        }
+        if (localVideoTrackRef.current) {
+          stream.addTrack(localVideoTrackRef.current.mediaStreamTrack);
+        }
+        
+        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        const chunks: Blob[] = [];
+        
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+        
+        recorder.onstop = async () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          await uploadRecordingMutation.mutateAsync(blob);
+        };
+        
+        recorder.start();
+        mediaRecorderRef.current = recorder;
+        audioStreamRef.current = stream;
+        setIsRecording(true);
+        startRecordingMutation.mutate();
+      }
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+    }
+  }, [startRecordingMutation, uploadRecordingMutation]);
 
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      stopRecordingMutation.mutate();
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+    }
+  }, [stopRecordingMutation]);
+
+  // UI Helpers
   const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+    return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   };
 
   const getParticipantName = () => {
@@ -279,564 +641,18 @@ export default function Meeting() {
     return meetingInfo.doctorName;
   };
 
-  // Helper function to handle track publication (following Twilio best practices)
-  const trackPublished = (publication: any, participant: any) => {
-    // If track is already available, attach it immediately
-    if (publication.track) {
-      attachTrackToDOM(publication.track, participant.identity);
-    }
-    
-    // Listen for when the track becomes subscribed
-    publication.on('subscribed', (track: any) => {
-      attachTrackToDOM(track, participant.identity);
-    });
-    
-    // Listen for when the track becomes unsubscribed
-    publication.on('unsubscribed', (track: any) => {
-      trackUnsubscribed(track, participant.identity);
-    });
-  };
-  
-  // Helper function to handle track unsubscription
-  const trackUnsubscribed = (track: any, participantIdentity: string) => {
-    try {
-      track.detach();
-      // Remove from tracking
-      const elements = trackElementsRef.current.get(participantIdentity);
-      if (elements) {
-        const trackElements = Array.from(elements);
-        trackElements.forEach(element => {
-          if (element instanceof HTMLVideoElement || element instanceof HTMLAudioElement) {
-            try {
-              element.remove();
-            } catch (e) {
-              console.warn("Error removing track element:", e);
-            }
-          }
-        });
-      }
-      // Also remove by ID
-      if (track.kind === 'video') {
-        const videoElement = document.getElementById(`remote-video-${participantIdentity}`);
-        if (videoElement) videoElement.remove();
-        // Show fallback if no remote video
-        const videoContainer = document.getElementById('remote-video-container');
-        const fallback = document.getElementById('video-fallback');
-        if (videoContainer && videoContainer.children.length === 0 && fallback) {
-          fallback.style.display = 'flex';
-        }
-      } else {
-        const audioElement = document.getElementById(`remote-audio-${participantIdentity}`);
-        if (audioElement) audioElement.remove();
-      }
-    } catch (error) {
-      console.error("Error detaching track:", error);
-    }
+  const handleConsentScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 10;
+    setConsentScrolled(isAtBottom);
   };
 
-  // Helper function to attach track to DOM
-  const attachTrackToDOM = (track: any, participantIdentity: string) => {
-    try {
-      // For audio tracks, check if element already exists and is playing
-      if (track.kind === 'audio') {
-        const existingAudio = document.getElementById(`remote-audio-${participantIdentity}`);
-        if (existingAudio && existingAudio instanceof HTMLAudioElement) {
-          // If element exists and is attached to the same track, don't remove it
-          if (existingAudio.srcObject === track.mediaStreamTrack) {
-            return; // Already attached, skip
-          }
-          // Only remove if it's a different track
-          try {
-            existingAudio.pause();
-            existingAudio.srcObject = null;
-          } catch (e) {
-            // Ignore errors when stopping
-          }
-          existingAudio.remove();
-        }
-      }
-      
-      // For video tracks, remove existing
-      if (track.kind === 'video') {
-        const existingVideo = document.getElementById(`remote-video-${participantIdentity}`);
-        if (existingVideo) {
-          existingVideo.remove();
-        }
-      }
-      
-      const element = track.attach();
-      
-      if (track.kind === 'video') {
-        element.setAttribute('id', `remote-video-${participantIdentity}`);
-        element.style.width = '100%';
-        element.style.height = '100%';
-        element.style.objectFit = 'cover';
-        
-        const videoContainer = document.getElementById('remote-video-container');
-        const fallback = document.getElementById('video-fallback');
-        
-        if (videoContainer) {
-          videoContainer.appendChild(element);
-          if (fallback) fallback.style.display = 'none';
-        } else {
-          document.body.appendChild(element);
-        }
-      } else {
-        // Audio track - attach to a hidden container to prevent removal issues
-        element.setAttribute('id', `remote-audio-${participantIdentity}`);
-        element.setAttribute('autoplay', 'true');
-        element.setAttribute('playsinline', 'true');
-        element.setAttribute('muted', 'false');
-        element.style.display = 'none'; // Hide audio element
-        
-        // Create a container for audio elements if it doesn't exist
-        let audioContainer = document.getElementById('remote-audio-container');
-        if (!audioContainer) {
-          audioContainer = document.createElement('div');
-          audioContainer.id = 'remote-audio-container';
-          audioContainer.style.display = 'none';
-          document.body.appendChild(audioContainer);
-        }
-        audioContainer.appendChild(element);
-        
-        // Try to play the audio element after a small delay to ensure it's in the DOM
-        if (element instanceof HTMLAudioElement) {
-          setTimeout(() => {
-            element.play().catch(err => {
-              // Only log non-abort errors
-              if (err.name !== 'AbortError') {
-                console.warn("Could not autoplay audio:", err);
-              }
-            });
-          }, 100);
-        }
-      }
-      
-      // Track this element for cleanup
-      if (!trackElementsRef.current.has(participantIdentity)) {
-        trackElementsRef.current.set(participantIdentity, new Set());
-      }
-      trackElementsRef.current.get(participantIdentity)?.add(element);
-    } catch (error) {
-      console.error("Error attaching track to DOM:", error);
-    }
-  };
-
-  // Send notification when participant joins/leaves
-  const notifyParticipantEvent = async (event: 'joined' | 'left', participantName: string) => {
-    try {
-      await apiRequest("POST", `/api/meetings/${meetingId}/participant-event`, {
-        event,
-        participantName,
-      });
-    } catch (error) {
-      console.error("Failed to send participant event notification:", error);
-    }
-  };
-
+  // Consent modal
   useEffect(() => {
     if (meetingInfo && !meetingInfo.hasConsented && isJoined && user?.role === "doctor") {
       setShowConsentModal(true);
     }
   }, [meetingInfo, isJoined, user?.role]);
-
-  useEffect(() => {
-    if (!isJoined || !meetingInfo?.roomName) return;
-    if (roomRef.current) return;
-    if (isConnectingRef.current) return; // Prevent multiple simultaneous connection attempts
-    if (eventHandlersAttachedRef.current) return; // Prevent re-attaching handlers
-    
-    // Reset refs when starting a new connection to prevent stale state
-    hasShownConnectedToastRef.current = false;
-    notifiedParticipantsRef.current.clear();
-    notificationThrottleRef.current.clear();
-    
-    // Check if Twilio token is available
-    if (!meetingInfo?.twilioToken) {
-      toast({
-        title: "Video Call Unavailable",
-        description: "Twilio credentials are not configured. Please contact support.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    const initCall = async () => {
-      // Mark as connecting to prevent duplicate attempts
-      isConnectingRef.current = true;
-      
-      try {
-        // Clean up any existing connection first
-        if (roomRef.current) {
-          try {
-            roomRef.current.disconnect();
-          } catch (err) {
-            console.error("Error disconnecting existing room:", err);
-          }
-          roomRef.current = null;
-        }
-        
-        // Clean up any existing local tracks
-        if (localVideoTrackRef.current) {
-          try {
-            localVideoTrackRef.current.stop();
-          } catch (err) {
-            console.error("Error stopping video track:", err);
-          }
-          localVideoTrackRef.current = null;
-        }
-        if (localAudioTrackRef.current) {
-          try {
-            localAudioTrackRef.current.stop();
-          } catch (err) {
-            console.error("Error stopping audio track:", err);
-          }
-          localAudioTrackRef.current = null;
-        }
-        // Create local audio and video tracks
-        const localTracks: any[] = [];
-        
-        // Create audio track
-        try {
-          const audioTrack = await TwilioVideo.createLocalAudioTrack();
-          localAudioTrackRef.current = audioTrack;
-          localTracks.push(audioTrack);
-        } catch (err) {
-          console.error("Failed to create local audio track:", err);
-        }
-        
-        // Create video track if video is enabled
-        if (isVideoOn) {
-          try {
-            const videoTrack = await TwilioVideo.createLocalVideoTrack({
-              width: 1280,
-              height: 720,
-            });
-            localVideoTrackRef.current = videoTrack;
-            localTracks.push(videoTrack);
-          } catch (err) {
-            console.error("Failed to create local video track:", err);
-            toast({
-              title: "Video Unavailable",
-              description: "Could not access camera. Continuing with audio only.",
-              variant: "destructive",
-            });
-          }
-        }
-        
-        // Connect to room with tracks - suppress WebSocket errors
-        const room = await TwilioVideo.connect(meetingInfo.twilioToken!, {
-          name: meetingInfo.roomName!,
-          tracks: localTracks,
-        }).catch((err: any) => {
-          // Suppress WebSocket connection errors - they're usually transient and Twilio handles retries
-          if (err.message && (err.message.includes('WebSocket') || err.message.includes('wss://'))) {
-            console.warn('Twilio WebSocket connection issue (will retry automatically):', err.message);
-          }
-          throw err; // Re-throw to handle in outer catch
-        });
-        
-        roomRef.current = room;
-        
-        // Publish local tracks and ensure they're available for subscription
-        for (const track of localTracks) {
-          await room.localParticipant.publishTrack(track);
-          // Small delay to ensure publication completes
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-        
-        // Don't notify about our own join - we're already in the meeting
-        
-        // Handle existing participants (don't notify, they were already here)
-        room.participants.forEach(participant => {
-          // Only track unique participant identities
-          setParticipants(prev => {
-            const newSet = new Set(prev);
-            newSet.add(participant.identity);
-            return newSet;
-          });
-          
-          // Handle existing tracks that are already published
-          participant.tracks.forEach(publication => {
-            trackPublished(publication, participant);
-          });
-          
-          // Listen for tracks that will be published later
-          participant.on('trackPublished', publication => {
-            trackPublished(publication, participant);
-          });
-        });
-        
-        // Handle new participants joining - only attach once
-        const participantConnectedHandler = async (participant: any) => {
-          // Throttle notifications - only show if not shown in last 2 seconds
-          const now = Date.now();
-          const lastNotification = notificationThrottleRef.current.get(`joined-${participant.identity}`);
-          if (lastNotification && (now - lastNotification) < 2000) {
-            return; // Skip duplicate notification
-          }
-          notificationThrottleRef.current.set(`joined-${participant.identity}`, now);
-          
-          // Only notify if this participant hasn't been notified before
-          if (!notifiedParticipantsRef.current.has(participant.identity)) {
-            notifiedParticipantsRef.current.add(participant.identity);
-            
-            // Notify backend only once (silently, no console logs)
-            const participantName = getParticipantName();
-            notifyParticipantEvent('joined', participantName).catch(() => {
-              // Silent error handling
-            });
-          }
-          
-          // Update participant count (only unique identities)
-          setParticipants(prev => {
-            const newSet = new Set(prev);
-            newSet.add(participant.identity);
-            return newSet;
-          });
-          
-          // Handle existing tracks that are already published
-          participant.tracks.forEach((publication: any) => {
-            trackPublished(publication, participant);
-          });
-          
-          // Listen for tracks that will be published later
-          participant.on('trackPublished', (publication: any) => {
-            trackPublished(publication, participant);
-          });
-        };
-        
-        participantConnectedHandlerRef.current = participantConnectedHandler;
-        room.on('participantConnected', participantConnectedHandler);
-        
-        // Handle participants leaving - only attach once
-        const participantDisconnectedHandler = async (participant: any) => {
-          // Throttle notifications - only show if not shown in last 2 seconds
-          const now = Date.now();
-          const lastNotification = notificationThrottleRef.current.get(`left-${participant.identity}`);
-          if (lastNotification && (now - lastNotification) < 2000) {
-            return; // Skip duplicate notification
-          }
-          notificationThrottleRef.current.set(`left-${participant.identity}`, now);
-          
-          // Only notify if this participant was previously notified as joined
-          const wasNotified = notifiedParticipantsRef.current.has(participant.identity);
-          
-          // Clean up all track elements for this participant first
-          const elements = trackElementsRef.current.get(participant.identity);
-          if (elements) {
-            elements.forEach(element => {
-              try {
-                element.remove();
-              } catch (e) {
-                // Silent cleanup - errors are expected if elements already removed
-              }
-            });
-            trackElementsRef.current.delete(participant.identity);
-          }
-          
-          // Also remove any video/audio elements with this participant's identity
-          const allElements = document.querySelectorAll(`[id^="remote-video-${participant.identity}"], [id^="remote-audio-${participant.identity}"]`);
-          allElements.forEach(el => el.remove());
-          
-          // Update participant count
-          setParticipants(prev => {
-            const newSet = new Set(prev);
-            const participantWasInSet = newSet.has(participant.identity);
-            newSet.delete(participant.identity);
-            
-            // Only show notification if participant was previously notified and actually in the set
-            if (wasNotified && participantWasInSet) {
-              notifiedParticipantsRef.current.delete(participant.identity);
-              
-              // Silent notification - only log to console, don't show toast
-              setTimeout(() => {
-                const participantName = getParticipantName();
-                console.log(`Participant ${participantName} left the call`);
-                
-                // Notify backend only once (silently)
-                notifyParticipantEvent('left', participantName).catch(console.error);
-              }, 100);
-            }
-            
-            // Show fallback if no remote participants left
-            if (newSet.size === 0) {
-              setTimeout(() => {
-                const fallback = document.getElementById('video-fallback');
-                if (fallback) fallback.style.display = 'flex';
-              }, 200);
-            }
-            
-            return newSet;
-          });
-        };
-        
-        participantDisconnectedHandlerRef.current = participantDisconnectedHandler;
-        room.on('participantDisconnected', participantDisconnectedHandler);
-        
-        // Helper function to attach local video to DOM
-        const attachLocalVideo = (track: any) => {
-          try {
-            // Remove existing local video element
-            const existingVideo = document.getElementById('local-video');
-            if (existingVideo) existingVideo.remove();
-            
-            const element = track.attach();
-            element.setAttribute('id', 'local-video');
-            element.style.width = '100%';
-            element.style.height = '100%';
-            element.style.objectFit = 'cover';
-            
-            const videoContainer = document.getElementById('local-video-container');
-            if (videoContainer) {
-              videoContainer.appendChild(element);
-            } else {
-              document.body.appendChild(element);
-            }
-          } catch (error) {
-            console.error("Error attaching local video:", error);
-          }
-        };
-        
-        // Handle existing local video tracks
-        room.localParticipant.videoTracks.forEach(publication => {
-          if (publication.track) {
-            attachLocalVideo(publication.track);
-          }
-        });
-        
-        // Handle local video track published events
-        room.localParticipant.on('trackPublished', (publication: any) => {
-          if (publication.track) {
-            if (publication.track.kind === 'video') {
-              attachLocalVideo(publication.track);
-            } else if (publication.track.kind === 'audio') {
-              // Audio tracks don't need visual attachment, they play automatically
-              console.log("Local audio track published");
-            }
-          }
-        });
-        
-        // Handle local track unpublished events
-        room.localParticipant.on('trackUnpublished', (publication: any) => {
-          if (publication.track) {
-            if (publication.track.kind === 'video') {
-              const videoElement = document.getElementById('local-video');
-              if (videoElement) {
-                videoElement.remove();
-              }
-            }
-          }
-        });
-        
-        // Silent connection - no console logs to avoid clutter
-        // Connection is established, tracks are published and subscribed
-        
-        // Mark event handlers as attached
-        eventHandlersAttachedRef.current = true;
-        // Reset connecting flag on successful connection
-        isConnectingRef.current = false;
-      } catch (err: any) {
-        console.error('Failed to join call:', err);
-        // Reset connecting flag on error
-        isConnectingRef.current = false;
-        
-        // Clean up any partial connection state
-        if (roomRef.current) {
-          try {
-            roomRef.current.disconnect();
-          } catch (cleanupErr) {
-            console.error("Error during cleanup:", cleanupErr);
-          }
-          roomRef.current = null;
-        }
-        
-        // Clean up tracks
-        if (localVideoTrackRef.current) {
-          try {
-            localVideoTrackRef.current.stop();
-          } catch (cleanupErr) {
-            console.error("Error stopping video track:", cleanupErr);
-          }
-          localVideoTrackRef.current = null;
-        }
-        if (localAudioTrackRef.current) {
-          try {
-            localAudioTrackRef.current.stop();
-          } catch (cleanupErr) {
-            console.error("Error stopping audio track:", cleanupErr);
-          }
-          localAudioTrackRef.current = null;
-        }
-        
-        // If it's a duplicate identity error, wait and retry
-        if (err.message && (err.message.includes('duplicate identity') || err.message.includes('DuplicateIdentity'))) {
-          console.log("Duplicate identity detected, will retry automatically...");
-          // Wait a bit before allowing retry (the useEffect will retry since isJoined is still true)
-          setTimeout(() => {
-            isConnectingRef.current = false;
-          }, 2000);
-        } else {
-          toast({
-            title: "Connection Failed",
-            description: err.message || "Could not connect. Please try again.",
-            variant: "destructive",
-          });
-        }
-      }
-    };
-    
-    initCall();
-    
-    return () => {
-      isConnectingRef.current = false;
-      
-      // Remove event handlers before disconnecting
-      if (roomRef.current) {
-        try {
-          // Remove participant event handlers
-          if (participantConnectedHandlerRef.current) {
-            roomRef.current.off('participantConnected', participantConnectedHandlerRef.current);
-            participantConnectedHandlerRef.current = null;
-          }
-          if (participantDisconnectedHandlerRef.current) {
-            roomRef.current.off('participantDisconnected', participantDisconnectedHandlerRef.current);
-            participantDisconnectedHandlerRef.current = null;
-          }
-          
-          // Disconnect room
-          roomRef.current.disconnect();
-        } catch (err) {
-          console.error("Error disconnecting room in cleanup:", err);
-        }
-        roomRef.current = null;
-      }
-      
-      // Clean up local tracks
-      if (localVideoTrackRef.current) {
-        try {
-          localVideoTrackRef.current.stop();
-        } catch (err) {
-          console.error("Error stopping video track in cleanup:", err);
-        }
-        localVideoTrackRef.current = null;
-      }
-      if (localAudioTrackRef.current) {
-        try {
-          localAudioTrackRef.current.stop();
-        } catch (err) {
-          console.error("Error stopping audio track in cleanup:", err);
-        }
-        localAudioTrackRef.current = null;
-      }
-      
-      // Reset flags
-      eventHandlersAttachedRef.current = false;
-      hasShownConnectedToastRef.current = false;
-      notificationThrottleRef.current.clear();
-      notifiedParticipantsRef.current.clear();
-    };
-  }, [isJoined, meetingInfo?.roomName, meetingInfo?.twilioToken, isVideoOn, meetingId]);
 
   if (isLoading) {
     return (
@@ -851,84 +667,20 @@ export default function Meeting() {
 
   if (error || !meetingInfo) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center p-6">
-        <Card className="w-full max-w-md border-2">
-          <CardHeader className="text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-              <AlertTriangle className="w-8 h-8 text-destructive" />
-            </div>
-            <CardTitle>Meeting Not Found</CardTitle>
-            <CardDescription>
-              This meeting does not exist or you don't have access to it.
-            </CardDescription>
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Meeting Not Found
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <Button
-              className="w-full"
-              onClick={() => setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard")}
-            >
-              Return to Dashboard
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!isJoined) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-chart-2/5 flex items-center justify-center p-6">
-        <Card className="w-full max-w-lg border-2 shadow-2xl">
-          <CardHeader className="text-center space-y-4">
-            <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center mb-4 shadow-lg">
-              <Video className="w-10 h-10 text-primary-foreground" />
-            </div>
-            <CardTitle className="text-2xl">{meetingInfo.title || "Video Consultation"}</CardTitle>
-            <CardDescription className="text-base">
-              {user?.role === "doctor"
-                ? `Consultation with ${meetingInfo.patientName || meetingInfo.participantDoctorName}`
-                : `Consultation with Dr. ${meetingInfo.doctorName}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-center gap-6">
-              <div className="text-center space-y-2">
-                <Avatar className="w-20 h-20 mx-auto border-2 border-primary">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
-                    {getInitials(user?.name || "")}
-                  </AvatarFallback>
-                </Avatar>
-                <p className="text-sm font-medium">You</p>
-              </div>
-              <div className="w-12 h-0.5 bg-gradient-to-r from-muted to-primary to-muted" />
-              <div className="text-center space-y-2">
-                <Avatar className="w-20 h-20 mx-auto border-2 border-muted">
-                  <AvatarFallback className="bg-muted text-muted-foreground text-2xl">
-                    {getInitials(getParticipantName())}
-                  </AvatarFallback>
-                </Avatar>
-                <p className="text-sm font-medium">{getParticipantName()}</p>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-lg bg-muted/50 border space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <Shield className="w-4 h-4 text-primary" />
-                <span className="font-medium">Secure & Encrypted</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                This video call is end-to-end encrypted. Recording requires explicit consent from all participants.
-              </p>
-            </div>
-
-            <Button
-              className="w-full gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
-              size="lg"
-              onClick={() => setIsJoined(true)}
-              data-testid="button-join-meeting"
-            >
-              <Video className="w-5 h-5" />
-              Join Meeting
+            <p className="text-muted-foreground mb-4">
+              The meeting you're looking for doesn't exist or you don't have access to it.
+            </p>
+            <Button onClick={() => setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard")}>
+              Go to Dashboard
             </Button>
           </CardContent>
         </Card>
@@ -937,21 +689,13 @@ export default function Meeting() {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex flex-col overflow-hidden">
-      {/* Header Bar */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-black/60 backdrop-blur-md border-b border-white/10 px-4 py-3">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col">
+      {/* Header */}
+      <div className="bg-black/90 backdrop-blur-lg border-b border-white/10 p-4 relative z-20">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-              <Video className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-white font-semibold text-sm">{meetingInfo.title || "Video Consultation"}</h2>
-              <p className="text-white/60 text-xs">{getParticipantName()}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {participants.size >= 0 && (
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold text-white">{meetingInfo.title || "Video Consultation"}</h1>
+            {participants.size > 0 && (
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
                 <Users className="w-3 h-3 mr-1" />
                 {participants.size + 1} participant{(participants.size + 1) !== 1 ? 's' : ''}
@@ -964,20 +708,43 @@ export default function Meeting() {
               </Badge>
             )}
           </div>
+          <div className="flex items-center gap-2">
+            {!isAudioOnly && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-10 h-10 rounded-full text-white hover:text-white hover:bg-white/10"
+                onClick={() => setShowSettingsModal(true)}
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+            )}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowEndCallModal(true)}
+              className="gap-2"
+            >
+              <PhoneOff className="w-4 h-4" />
+              End Call
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* Main Video Area */}
-      <div className="flex-1 relative mt-14">
+      <div className="flex-1 relative mt-0">
         {/* Remote video container */}
         <div id="remote-video-container" className="absolute inset-0 w-full h-full bg-black">
-          {/* Remote video will be inserted here by Twilio */}
+          {/* Remote videos will be inserted here */}
         </div>
         
         {/* Local video container (picture-in-picture) */}
-        <div id="local-video-container" className="absolute bottom-24 right-4 w-56 h-40 rounded-xl overflow-hidden border-2 border-white shadow-2xl bg-black z-10">
-          {/* Local video will be inserted here by Twilio */}
-        </div>
+        {!isAudioOnly && (
+          <div id="local-video-container" className="absolute bottom-24 right-4 w-56 h-40 rounded-xl overflow-hidden border-2 border-white shadow-2xl bg-black z-10">
+            {/* Local video will be inserted here */}
+          </div>
+        )}
         
         {/* Fallback when no video */}
         <div className="absolute inset-0 flex items-center justify-center" id="video-fallback">
@@ -989,7 +756,9 @@ export default function Meeting() {
             </Avatar>
             <div>
               <p className="text-2xl font-semibold">{getParticipantName()}</p>
-              <p className="text-white/60 mt-2">{isVideoOn ? "Video call in progress" : "Audio call in progress"}</p>
+              <p className="text-white/60 mt-2">
+                {isAudioOnly ? "Audio call in progress" : isVideoOn ? "Video call in progress" : "Audio call in progress"}
+              </p>
             </div>
           </div>
         </div>
@@ -998,190 +767,55 @@ export default function Meeting() {
       {/* Controls Bar */}
       <div className="bg-black/90 backdrop-blur-lg border-t border-white/10 p-4 relative z-10">
         <div className="max-w-4xl mx-auto flex items-center justify-center gap-3">
+          {/* Audio-Only Toggle */}
+          <Button
+            variant={isAudioOnly ? "default" : "secondary"}
+            size="icon"
+            className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
+            onClick={toggleAudioOnly}
+            title={isAudioOnly ? "Switch to Video Call" : "Switch to Audio Call"}
+          >
+            {isAudioOnly ? <Phone className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+          </Button>
+
+          {/* Mute/Unmute */}
           <Button
             variant={isMuted ? "destructive" : "secondary"}
             size="icon"
             className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
-            onClick={async () => {
-              const newMutedState = !isMuted;
-              
-              if (!roomRef.current) {
-                setIsMuted(newMutedState);
-                return;
-              }
-              
-              try {
-                // Update state first for immediate UI feedback
-                setIsMuted(newMutedState);
-                
-                // Handle local audio track ref
-                if (localAudioTrackRef.current) {
-                  if (newMutedState) {
-                    localAudioTrackRef.current.disable();
-                  } else {
-                    localAudioTrackRef.current.enable();
-                  }
-                }
-                
-                // Handle published audio tracks from localParticipant
-                const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
-                for (const publication of audioPublications) {
-                  if (publication.track) {
-                    if (newMutedState) {
-                      publication.track.disable();
-                    } else {
-                      publication.track.enable();
-                    }
-                  }
-                }
-              } catch (err: any) {
-                console.error("Failed to toggle mute:", err);
-                // Revert state on error
-                setIsMuted(!newMutedState);
-                toast({
-                  title: "Error",
-                  description: "Failed to toggle microphone. Please try again.",
-                  variant: "destructive",
-                });
-              }
-            }}
+            onClick={toggleMute}
             data-testid="button-toggle-mic"
           >
             {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
           </Button>
 
-          <Button
-            variant={isVideoOn ? "secondary" : "destructive"}
-            size="icon"
-            className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
-            onClick={async () => {
-              const newVideoState = !isVideoOn;
-              
-              if (!roomRef.current) {
-                setIsVideoOn(newVideoState);
-                return;
-              }
-              
-              try {
-                if (newVideoState) {
-                  setIsVideoOn(true);
-                  
-                  if (!localVideoTrackRef.current) {
-                    const videoTrack = await TwilioVideo.createLocalVideoTrack({
-                      width: 1280,
-                      height: 720,
-                    });
-                    localVideoTrackRef.current = videoTrack;
-                    await roomRef.current.localParticipant.publishTrack(videoTrack);
-                    
-                    const element = videoTrack.attach();
-                    element.setAttribute('id', 'local-video');
-                    element.style.width = '100%';
-                    element.style.height = '100%';
-                    element.style.objectFit = 'cover';
-                    
-                    const videoContainer = document.getElementById('local-video-container');
-                    if (videoContainer) {
-                      const existingVideo = videoContainer.querySelector('#local-video');
-                      if (existingVideo) existingVideo.remove();
-                      videoContainer.appendChild(element);
-                    }
-                  } else {
-                    localVideoTrackRef.current.enable();
-                    
-                    const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
-                      .some(pub => pub.track === localVideoTrackRef.current);
-                    
-                    if (!isPublished) {
-                      await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
-                    }
-                    
-                    const videoContainer = document.getElementById('local-video-container');
-                    if (!videoContainer?.querySelector('#local-video')) {
-                      const element = localVideoTrackRef.current.attach();
-                      element.setAttribute('id', 'local-video');
-                      element.style.width = '100%';
-                      element.style.height = '100%';
-                      element.style.objectFit = 'cover';
-                      if (videoContainer) {
-                        videoContainer.appendChild(element);
-                      }
-                    }
-                  }
-                } else {
-                  setIsVideoOn(false);
-                  
-                  if (localVideoTrackRef.current) {
-                    const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
-                    for (const publication of videoPublications) {
-                      if (publication.track === localVideoTrackRef.current) {
-                        await roomRef.current.localParticipant.unpublishTrack(publication.track);
-                      }
-                    }
-                    
-                    localVideoTrackRef.current.disable();
-                    
-                    const videoContainer = document.getElementById('local-video-container');
-                    const videoElement = videoContainer?.querySelector('#local-video');
-                    if (videoElement) {
-                      videoElement.remove();
-                    }
-                  }
-                }
-              } catch (err: any) {
-                console.error("Failed to toggle video:", err);
-                setIsVideoOn(!newVideoState);
-                toast({
-                  title: "Error",
-                  description: err.message || "Failed to toggle video. Please try again.",
-                  variant: "destructive",
-                });
-              }
-            }}
-            data-testid="button-toggle-video"
-          >
-            {isVideoOn ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
-          </Button>
+          {/* Video On/Off (only show if not audio-only) */}
+          {!isAudioOnly && (
+            <Button
+              variant={isVideoOn ? "secondary" : "destructive"}
+              size="icon"
+              className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
+              onClick={toggleVideo}
+              data-testid="button-toggle-video"
+            >
+              {isVideoOn ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
+            </Button>
+          )}
 
+          {/* Recording (only for doctors) */}
           {user?.role === "doctor" && (
             <Button
               variant={isRecording ? "destructive" : "secondary"}
               size="icon"
               className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
-              onClick={async () => {
-                // Refetch meeting info to get latest consent status
-                await queryClient.refetchQueries({ queryKey: ["/api/meetings", meetingId] });
-                const updatedInfo = queryClient.getQueryData<MeetingInfo>(["/api/meetings", meetingId]);
-                
-                if (!updatedInfo?.hasConsented) {
-                  setShowConsentModal(true);
-                } else if (isRecording) {
-                  stopRecording();
-                } else {
-                  startRecordingMutation.mutate();
-                }
-              }}
-              disabled={startRecordingMutation.isPending}
-              data-testid="button-toggle-recording"
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={startRecordingMutation.isPending || stopRecordingMutation.isPending}
             >
-              {startRecordingMutation.isPending ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
-              ) : (
-                <Circle className={`w-6 h-6 ${isRecording ? "fill-current" : ""}`} />
-              )}
+              <Circle className={`w-6 h-6 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
             </Button>
           )}
 
-          <Button
-            variant="destructive"
-            size="icon"
-            className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
-            onClick={() => setShowEndCallModal(true)}
-            data-testid="button-end-call"
-          >
-            <Phone className="w-6 h-6 rotate-[135deg]" />
-          </Button>
-
+          {/* Settings */}
           <Button
             variant="ghost"
             size="icon"
@@ -1194,78 +828,64 @@ export default function Meeting() {
         </div>
       </div>
 
+      {/* Consent Modal */}
       <Dialog open={showConsentModal} onOpenChange={setShowConsentModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Circle className="w-5 h-5 text-destructive" />
+              <Shield className="w-5 h-5 text-primary" />
               Recording Consent Required
             </DialogTitle>
             <DialogDescription>
-              Please read and accept the recording consent to proceed
+              Please read and accept the recording consent to continue with the consultation.
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="h-64 w-full rounded border p-4" onScrollCapture={handleConsentScroll} ref={consentScrollRef}>
-            <div className="space-y-4 text-sm">
+          <ScrollArea className="flex-1 pr-4" onScroll={handleConsentScroll} ref={consentScrollRef}>
+            <div className="space-y-4 text-sm text-muted-foreground">
               <p>
-                <strong>Recording Consent Agreement</strong>
+                By proceeding, you consent to the recording of this video consultation for medical record purposes.
+                The recording will be securely stored and used only for your medical care.
               </p>
               <p>
-                By consenting to this recording, you acknowledge and agree to the following:
+                <strong>Your Rights:</strong>
               </p>
-              <ul className="list-disc list-inside space-y-2 ml-2">
-                <li>The consultation may be recorded for medical documentation purposes.</li>
-                <li>The recording will be securely stored and only accessible to authorized personnel.</li>
-                <li>The recording may be transcribed using AI technology to generate clinical notes.</li>
-                <li>You have the right to withdraw consent at any time during the consultation.</li>
-                <li>If you do not consent, the consultation can still proceed without recording.</li>
+              <ul className="list-disc list-inside space-y-2 ml-4">
+                <li>You can request to stop recording at any time</li>
+                <li>You have the right to access your recordings</li>
+                <li>Recordings are stored securely and encrypted</li>
+                <li>Recordings are only used for medical purposes</li>
               </ul>
             </div>
           </ScrollArea>
-
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="consent"
-              checked={consentChecked}
-              onCheckedChange={(checked) => setConsentChecked(checked as boolean)}
-              disabled={!consentScrolled}
-              data-testid="checkbox-consent"
-            />
-            <Label
-              htmlFor="consent"
-              className={!consentScrolled ? "text-muted-foreground" : ""}
-            >
-              I have read and agree to the recording consent
-            </Label>
-          </div>
-
-          {!consentScrolled && (
-            <p className="text-xs text-muted-foreground">
-              Please scroll to read the full consent before accepting
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConsentModal(false)}>
-              Decline
-            </Button>
+          <DialogFooter className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="consent-checkbox"
+                checked={consentChecked}
+                onCheckedChange={(checked) => setConsentChecked(checked as boolean)}
+              />
+              <Label htmlFor="consent-checkbox" className="text-sm">
+                I have read and agree to the consent terms
+              </Label>
+            </div>
             <Button
               onClick={() => consentMutation.mutate()}
-              disabled={!consentChecked || consentMutation.isPending}
-              className="gap-2"
-              data-testid="button-accept-consent"
+              disabled={!consentScrolled || !consentChecked || consentMutation.isPending}
             >
               {consentMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
               ) : (
-                <CheckCircle className="w-4 h-4" />
+                "Grant Consent"
               )}
-              Accept & Continue
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* End Call Modal */}
       <AlertDialog open={showEndCallModal} onOpenChange={setShowEndCallModal}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1276,7 +896,7 @@ export default function Meeting() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleEndCall} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction onClick={handleEndCall} className="bg-destructive text-destructive-foreground">
               End Call
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1306,152 +926,34 @@ export default function Meeting() {
               <Button
                 variant={isMuted ? "destructive" : "secondary"}
                 size="sm"
-                onClick={async () => {
-                  const newMutedState = !isMuted;
-                  
-                  if (!roomRef.current) {
-                    setIsMuted(newMutedState);
-                    return;
-                  }
-                  
-                  try {
-                    setIsMuted(newMutedState);
-                    
-                    if (localAudioTrackRef.current) {
-                      if (newMutedState) {
-                        localAudioTrackRef.current.disable();
-                      } else {
-                        localAudioTrackRef.current.enable();
-                      }
-                    }
-                    
-                    const audioPublications = Array.from(roomRef.current.localParticipant.audioTracks.values());
-                    for (const publication of audioPublications) {
-                      if (publication.track) {
-                        if (newMutedState) {
-                          publication.track.disable();
-                        } else {
-                          publication.track.enable();
-                        }
-                      }
-                    }
-                  } catch (err: any) {
-                    console.error("Failed to toggle mute:", err);
-                    setIsMuted(!newMutedState);
-                    toast({
-                      title: "Error",
-                      description: "Failed to toggle microphone. Please try again.",
-                      variant: "destructive",
-                    });
-                  }
-                }}
+                onClick={toggleMute}
               >
                 {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
                 {isMuted ? "Unmute" : "Mute"}
               </Button>
             </div>
             
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="video-settings">Camera</Label>
-                <p className="text-sm text-muted-foreground">
-                  {isVideoOn ? "On" : "Off"}
-                </p>
+            {!isAudioOnly && (
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="video-settings">Camera</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {isVideoOn ? "On" : "Off"}
+                  </p>
+                </div>
+                <Button
+                  variant={isVideoOn ? "secondary" : "destructive"}
+                  size="sm"
+                  onClick={toggleVideo}
+                >
+                  {isVideoOn ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
+                  {isVideoOn ? "Turn Off" : "Turn On"}
+                </Button>
               </div>
-              <Button
-                variant={isVideoOn ? "secondary" : "destructive"}
-                size="sm"
-                onClick={async () => {
-                  const newVideoState = !isVideoOn;
-                  
-                  if (!roomRef.current) {
-                    setIsVideoOn(newVideoState);
-                    return;
-                  }
-                  
-                  try {
-                    if (newVideoState) {
-                      setIsVideoOn(true);
-                      
-                      if (!localVideoTrackRef.current) {
-                        const videoTrack = await TwilioVideo.createLocalVideoTrack({
-                          width: 1280,
-                          height: 720,
-                        });
-                        localVideoTrackRef.current = videoTrack;
-                        await roomRef.current.localParticipant.publishTrack(videoTrack);
-                        
-                        const element = videoTrack.attach();
-                        element.setAttribute('id', 'local-video');
-                        element.style.width = '100%';
-                        element.style.height = '100%';
-                        element.style.objectFit = 'cover';
-                        const videoContainer = document.getElementById('local-video-container');
-                        if (videoContainer) {
-                          const existingVideo = videoContainer.querySelector('#local-video');
-                          if (existingVideo) existingVideo.remove();
-                          videoContainer.appendChild(element);
-                        }
-                      } else {
-                        localVideoTrackRef.current.enable();
-                        
-                        const isPublished = Array.from(roomRef.current.localParticipant.videoTracks.values())
-                          .some(pub => pub.track === localVideoTrackRef.current);
-                        
-                        if (!isPublished) {
-                          await roomRef.current.localParticipant.publishTrack(localVideoTrackRef.current);
-                        }
-                        
-                        const videoContainer = document.getElementById('local-video-container');
-                        if (!videoContainer?.querySelector('#local-video')) {
-                          const element = localVideoTrackRef.current.attach();
-                          element.setAttribute('id', 'local-video');
-                          element.style.width = '100%';
-                          element.style.height = '100%';
-                          element.style.objectFit = 'cover';
-                          if (videoContainer) {
-                            videoContainer.appendChild(element);
-                          }
-                        }
-                      }
-                    } else {
-                      setIsVideoOn(false);
-                      
-                      if (localVideoTrackRef.current) {
-                        const videoPublications = Array.from(roomRef.current.localParticipant.videoTracks.values());
-                        for (const publication of videoPublications) {
-                          if (publication.track === localVideoTrackRef.current) {
-                            await roomRef.current.localParticipant.unpublishTrack(publication.track);
-                          }
-                        }
-                        
-                        localVideoTrackRef.current.disable();
-                        
-                        const videoContainer = document.getElementById('local-video-container');
-                        const videoElement = videoContainer?.querySelector('#local-video');
-                        if (videoElement) {
-                          videoElement.remove();
-                        }
-                      }
-                    }
-                  } catch (err: any) {
-                    console.error("Failed to toggle video:", err);
-                    setIsVideoOn(!newVideoState);
-                    toast({
-                      title: "Error",
-                      description: err.message || "Failed to toggle video. Please try again.",
-                      variant: "destructive",
-                    });
-                  }
-                }}
-              >
-                {isVideoOn ? <Video className="w-4 h-4 mr-2" /> : <VideoOff className="w-4 h-4 mr-2" />}
-                {isVideoOn ? "Turn Off" : "Turn On"}
-              </Button>
-            </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSettingsModal(false)}>
+            <Button variant="secondary" onClick={() => setShowSettingsModal(false)}>
               Close
             </Button>
           </DialogFooter>

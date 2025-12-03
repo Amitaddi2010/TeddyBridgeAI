@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -159,10 +160,47 @@ function PatientChatDialog({ patientId, patientName }: { patientId: string; pati
 
 export default function DoctorPatients() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: patients, isLoading } = useQuery<Patient[]>({
     queryKey: ["/api/doctor/patients"],
     refetchInterval: 10000, // Refetch every 10 seconds for unread counts
+  });
+
+  const createCallMutation = useMutation({
+    mutationFn: async (patientId: string) => {
+      const res = await fetch(getApiUrl("/meetings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          patientId,
+          isImmediate: true,
+          title: "Video Consultation",
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to create call");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Call Started",
+        description: "Redirecting to meeting room...",
+      });
+      setLocation(`/meeting/${data.id}`);
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to start call",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    },
   });
 
   const getInitials = (name: string) => {
@@ -340,17 +378,26 @@ export default function DoctorPatients() {
                             <PatientChatDialog patientId={patient.userId || patient.id} patientName={patient.name} />
                             </DialogContent>
                           </Dialog>
-                          <Link href={`/doctor/patients/${patient.id}/meeting`}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                              data-testid={`button-call-${patient.id}`}
-                            >
-                              <Video className="w-3 h-3" />
-                              Call
-                            </Button>
-                          </Link>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            data-testid={`button-call-${patient.id}`}
+                            onClick={() => createCallMutation.mutate(patient.id)}
+                            disabled={createCallMutation.isPending}
+                          >
+                            {createCallMutation.isPending ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Connecting...
+                              </>
+                            ) : (
+                              <>
+                                <Video className="w-3 h-3" />
+                                Call
+                              </>
+                            )}
+                          </Button>
                           <Link href={`/doctor/patients/${patient.id}/survey`}>
                             <Button
                               variant="outline"

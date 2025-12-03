@@ -218,37 +218,90 @@ def get_peer_meetings(request):
 
 @api_view(['POST'])
 def create_peer_meeting(request):
-    """Create a peer meeting"""
+    """Create a peer meeting (doctor-to-doctor or patient-to-patient)"""
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
     
-    participant_id = request.data.get('participantId')
-    title = request.data.get('title')
-    description = request.data.get('description', '')
-    scheduled_at = request.data.get('scheduledAt')
-    
-    if not participant_id or not title or not scheduled_at:
-        return Response({'error': 'participantId, title, and scheduledAt required'}, status=status.HTTP_400_BAD_REQUEST)
-    
     try:
-        participant = User.objects.get(id=participant_id)
-    except User.DoesNotExist:
-        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    meeting = PeerMeeting.objects.create(
-        organizer=request.user,
-        participant=participant,
-        title=title,
-        description=description,
-        scheduled_at=scheduled_at
-    )
-    
-    return Response({
-        'id': str(meeting.id),
-        'title': meeting.title,
-        'scheduledAt': meeting.scheduled_at.isoformat(),
-        'status': meeting.status,
-    })
+        import logging
+        from django.utils.dateparse import parse_datetime
+        from django.utils import timezone
+        
+        logger = logging.getLogger(__name__)
+        
+        participant_id = request.data.get('participantId')
+        title = request.data.get('title')
+        description = request.data.get('description', '')
+        scheduled_at_str = request.data.get('scheduledAt')
+        
+        if not participant_id or not title or not scheduled_at_str:
+            return Response({'error': 'participantId, title, and scheduledAt required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parse scheduled_at from ISO string
+        try:
+            scheduled_at = parse_datetime(scheduled_at_str)
+            if scheduled_at is None:
+                # Try parsing as ISO format with Z or + timezone
+                from datetime import datetime
+                scheduled_at = datetime.fromisoformat(scheduled_at_str.replace('Z', '+00:00'))
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing scheduled_at: {scheduled_at_str}, error: {str(e)}")
+            return Response({'error': f'Invalid date format for scheduledAt: {scheduled_at_str}'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Make sure scheduled_at is timezone-aware
+        if timezone.is_naive(scheduled_at):
+            scheduled_at = timezone.make_aware(scheduled_at)
+        
+        try:
+            participant = User.objects.get(id=participant_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Validate that participants are same role (doctor-doctor or patient-patient)
+        if request.user.role != participant.role:
+            return Response({'error': 'Peer meetings can only be created between users of the same role'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Don't allow self-meetings
+        if request.user.id == participant.id:
+            return Response({'error': 'Cannot create a meeting with yourself'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create PeerMeeting
+        peer_meeting = PeerMeeting.objects.create(
+            organizer=request.user,
+            participant=participant,
+            title=title,
+            description=description,
+            scheduled_at=scheduled_at
+        )
+        
+        # Create notification for participant
+        try:
+            create_notification(
+                user=participant,
+                notification_type='appointment',
+                title='New Peer Meeting Scheduled',
+                message=f'{request.user.name} has scheduled a meeting with you: {title}',
+                link=f'/peer-network'  # Link to peer network for now, until we have peer meeting detail page
+            )
+        except Exception as notif_error:
+            logger.warning(f"Failed to create notification for peer meeting: {str(notif_error)}")
+            # Continue even if notification fails
+        
+        return Response({
+            'id': str(peer_meeting.id),
+            'title': peer_meeting.title,
+            'scheduledAt': peer_meeting.scheduled_at.isoformat(),
+            'status': peer_meeting.status,
+            'isPeerMeeting': True,
+        })
+        
+    except Exception as e:
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating peer meeting: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return Response({'error': f'Failed to create peer meeting: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['DELETE'])
 def delete_peer_meeting(request, meeting_id):

@@ -53,11 +53,13 @@ def register(request):
     # Create user with username if provided
     user = User.objects.create_user(email=email, password=password, name=name, role=role, username=username)
     
-    # Store Firebase UID if provided
+    # Store Firebase UID if provided (for Google-signup users)
     if firebase_uid:
-        # You might want to add a firebase_uid field to User model
-        # For now, we'll skip it if the field doesn't exist
-        pass
+        user.firebase_uid = firebase_uid
+        # Google-signup users have unusable password by default
+        if not password or password == 'firebase_auth':
+            user.set_unusable_password()
+        user.save()
     
     if role == 'doctor':
         # Doctor-specific fields
@@ -102,7 +104,10 @@ def register(request):
 @permission_classes([AllowAny])
 @csrf_exempt
 def user_login(request):
-    # Check if Firebase token is provided
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Check if Firebase token is provided (for Firebase authentication)
     auth_header = request.headers.get('Authorization', '')
     firebase_token = None
     
@@ -129,14 +134,38 @@ def user_login(request):
                 except User.DoesNotExist:
                     return Response({'error': 'User not found. Please register first.'}, status=status.HTTP_404_NOT_FOUND)
     
-    # Fallback to email/password authentication
+    # Email/password authentication
     email = request.data.get('email')
     password = request.data.get('password')
     
-    user = authenticate(request, email=email, password=password)
-    if user:
+    if not email or not password:
+        return Response({'error': 'Email and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = User.objects.get(email=email)
+        
+        # Check if user was created with Google (has firebase_uid)
+        # Google users have firebase_uid set and typically don't have a usable password
+        if user.firebase_uid:
+            # Check if password is valid
+            if not user.has_usable_password() or not user.check_password(password):
+                return Response({
+                    'error': 'GOOGLE_SIGNUP_REQUIRED',
+                    'message': 'This account was created using Google Sign-In. Please continue with Google or create a password using Forgot Password.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Verify password for all users
+        if not user.check_password(password):
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # Check if user is active
+        if not user.is_active:
+            return Response({'error': 'Account is disabled'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Login the user with Django session
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         request.session.save()
+        
         return Response({
             'success': True,
             'user': {
@@ -146,7 +175,8 @@ def user_login(request):
                 'role': user.role,
             }
         })
-    return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    except User.DoesNotExist:
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -202,7 +232,7 @@ def google_auth(request):
     email = firebase_user.get('email')
     name = request.data.get('name') or firebase_user.get('name')
     role = request.data.get('role', 'patient')
-    firebase_uid = firebase_user.get('firebase_uid')
+    firebase_uid = firebase_user.get('firebase_uid') or firebase_user.get('uid')
     photo_url = request.data.get('photoUrl') or firebase_user.get('picture')
     
     if not email:
@@ -214,6 +244,13 @@ def google_auth(request):
         # Update user info if needed
         if name and not user.name:
             user.name = name
+        # Update Firebase UID if not set
+        if firebase_uid and not user.firebase_uid:
+            user.firebase_uid = firebase_uid
+            # If password is unusable, keep it that way
+            if not user.has_usable_password():
+                user.set_unusable_password()
+        if name or firebase_uid:
             user.save()
         
         # User exists, login them

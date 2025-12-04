@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
-      // Try Firebase first
+      // Try Firebase first (for users who registered with email/password through Firebase)
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const token = await userCredential.user.getIdToken();
       
@@ -95,11 +95,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
         credentials: "include",
       });
+      
       if (!res.ok) {
-        const error = await res.text();
-        throw new Error(error || "Login failed");
+        const errorData = await res.json().catch(() => ({ error: await res.text() }));
+        
+        // Check for Google-signup error
+        if (errorData.error === 'GOOGLE_SIGNUP_REQUIRED') {
+          const error: any = new Error(errorData.message || "This account was created using Google Sign-In. Please continue with Google or create a password using Forgot Password.");
+          error.googleSignupRequired = true;
+          throw error;
+        }
+        
+        throw new Error(errorData.message || errorData.error || "Login failed");
       }
+      
       await fetchUser(token);
+      // After successful login, redirect will be handled by the component
+      return;
     } catch (error: any) {
       // If Firebase auth fails, fallback to Django auth
       if (error.code && error.code.startsWith('auth/')) {
@@ -120,8 +132,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ email, password }),
           credentials: "include",
         });
+        
         if (!res.ok) {
-          const errorText = await res.text();
+          const errorData = await res.json().catch(() => ({ error: await res.text() }));
+          
+          // Check for Google-signup error
+          if (errorData.error === 'GOOGLE_SIGNUP_REQUIRED') {
+            const error: any = new Error(errorData.message || "This account was created using Google Sign-In. Please continue with Google or create a password using Forgot Password.");
+            error.googleSignupRequired = true;
+            throw error;
+          }
+          
           // Provide user-friendly error message
           if (error.code === 'auth/user-not-found') {
             throw new Error("User not found. Please register first.");
@@ -130,9 +151,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else if (error.code === 'auth/invalid-email') {
             throw new Error("Invalid email address.");
           }
-          throw new Error(errorText || error.message || "Login failed");
+          
+          throw new Error(errorData.message || errorData.error || error.message || "Login failed");
         }
+        
         await fetchUser();
+      } else if (error.googleSignupRequired) {
+        // Re-throw Google-signup errors
+        throw error;
       } else {
         throw error;
       }
@@ -251,9 +277,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     // Sign out from Firebase
-    await firebaseSignOut(auth);
+    try {
+      await firebaseSignOut(auth);
+    } catch (error) {
+      // Ignore Firebase sign-out errors if Firebase is not configured
+      console.warn("Firebase sign-out error (ignored):", error);
+    }
     // Sign out from backend
-    await fetch(getApiUrl("/auth/logout"), { method: "POST", credentials: "include" });
+    try {
+      await fetch(getApiUrl("/auth/logout"), { method: "POST", credentials: "include" });
+    } catch (error) {
+      // Ignore backend sign-out errors
+      console.warn("Backend sign-out error (ignored):", error);
+    }
     setUser(null);
   };
 

@@ -32,6 +32,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     email_appointments = models.BooleanField(default=True)
     email_notes = models.BooleanField(default=True)
     email_surveys = models.BooleanField(default=True)
+    firebase_uid = models.CharField(max_length=255, blank=True, null=True, help_text='Firebase UID for Google-signup users')
     created_at = models.DateTimeField(auto_now_add=True)
     
     objects = UserManager()

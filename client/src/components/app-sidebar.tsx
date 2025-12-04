@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   Calendar,
   ClipboardList,
@@ -31,6 +32,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { LogoutConfirmationDialog } from "@/components/logout-confirmation-dialog";
 
 const doctorMenuItems = [
   { title: "Dashboard", url: "/doctor/dashboard", icon: Home },
@@ -55,8 +57,18 @@ const patientMenuItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   
   const menuItems = user?.role === "doctor" ? doctorMenuItems : patientMenuItems;
+
+  const handleLogoutClick = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const handleLogoutConfirm = async () => {
+    setShowLogoutDialog(false);
+    await logout();
+  };
 
   // Get unread message count
   const { data: unreadData } = useQuery<{ unreadCount: number }>({
@@ -77,7 +89,13 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar>
+    <>
+      <LogoutConfirmationDialog 
+        open={showLogoutDialog} 
+        onOpenChange={setShowLogoutDialog}
+        onConfirm={handleLogoutConfirm}
+      />
+      <Sidebar>
       <SidebarHeader className="p-6 border-b">
         <Link href="/">
           <div className="flex items-center gap-3 cursor-pointer group" data-testid="link-logo">
@@ -170,7 +188,7 @@ export function AppSidebar() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={logout}
+            onClick={handleLogoutClick}
             className="shrink-0 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors"
             data-testid="button-logout"
           >
@@ -179,5 +197,6 @@ export function AppSidebar() {
         </div>
       </SidebarFooter>
     </Sidebar>
+    </>
   );
 }

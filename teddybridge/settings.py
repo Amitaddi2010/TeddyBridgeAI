@@ -66,6 +66,13 @@ DATABASES = {
     }
 }
 
+AUTH_USER_MODEL = 'core.User'
+
+AUTHENTICATION_BACKENDS = [
+    'teddybridge.apps.core.backends.EmailAuthBackend',  # Custom backend for email auth
+    'django.contrib.auth.backends.ModelBackend',  # Fallback to default backend
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

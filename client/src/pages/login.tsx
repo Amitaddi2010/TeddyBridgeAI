@@ -11,6 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { Stethoscope, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { auth } from "@/lib/firebase-config";
+import { sendPasswordResetEmail } from "firebase/auth";
 
 export default function Login() {
   const [location, setLocation] = useLocation();
@@ -18,6 +21,9 @@ export default function Login() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [isSendingReset, setIsSendingReset] = useState(false);
   
   // Get redirect parameter from URL
   const redirectUrl = typeof window !== 'undefined' 
@@ -56,8 +62,20 @@ export default function Login() {
         description: "You have successfully logged in.",
       });
       // Redirect will be handled by useEffect above
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
+      
+      // Handle Google-signup required error
+      if (error.googleSignupRequired) {
+        toast({
+          title: "Google Sign-In Required",
+          description: errorMessage,
+          variant: "destructive",
+          duration: 8000,
+        });
+        return;
+      }
+      
       // Don't show error toast if user is already logged in (redirecting)
       if (!user) {
         toast({
@@ -68,6 +86,42 @@ export default function Login() {
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!forgotPasswordEmail) {
+      toast({
+        title: "Email Required",
+        description: "Please enter your email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      await sendPasswordResetEmail(auth, forgotPasswordEmail);
+      toast({
+        title: "Password Reset Email Sent",
+        description: "Please check your email for instructions to reset your password.",
+      });
+      setShowForgotPassword(false);
+      setForgotPasswordEmail("");
+    } catch (error: any) {
+      const errorMessage = error.code === 'auth/user-not-found' 
+        ? "No account found with this email address."
+        : error.code === 'auth/invalid-email'
+        ? "Invalid email address."
+        : "Failed to send reset email. Please try again.";
+      
+      toast({
+        title: "Reset Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingReset(false);
     }
   };
 
@@ -117,7 +171,17 @@ export default function Login() {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Password</FormLabel>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Password</FormLabel>
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto p-0 text-xs"
+                          onClick={() => setShowForgotPassword(true)}
+                        >
+                          Forgot password?
+                        </Button>
+                      </div>
                       <FormControl>
                         <Input
                           type="password"
@@ -241,6 +305,59 @@ export default function Login() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Forgot Password Dialog */}
+        <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Reset Password</DialogTitle>
+              <DialogDescription>
+                Enter your email address and we'll send you a link to reset your password.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label htmlFor="reset-email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      handleForgotPassword();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setForgotPasswordEmail("");
+                }}
+                disabled={isSendingReset}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleForgotPassword} disabled={isSendingReset}>
+                {isSendingReset ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  "Send Reset Link"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

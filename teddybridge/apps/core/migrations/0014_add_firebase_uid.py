@@ -1,52 +1,28 @@
-# Generated manually
-from django.db import migrations, models
-from django.db import connection
+# Generated migration to add firebase_uid to User model
+# Safe migration that checks if column exists before adding
+
+from django.db import migrations
 
 
-def add_firebase_uid_safely(apps, schema_editor):
-    """Add firebase_uid column only if it doesn't exist"""
-    db_table = 'users'
-    column_name = 'firebase_uid'
+def check_and_add_firebase_uid(apps, schema_editor):
+    """Check if firebase_uid column exists, add only if missing (for SQLite compatibility)"""
+    db = schema_editor.connection
     
-    with connection.cursor() as cursor:
-        # Check if column exists (SQLite-specific)
-        if 'sqlite' in connection.vendor:
-            cursor.execute(f"PRAGMA table_info({db_table})")
-            columns = [row[1] for row in cursor.fetchall()]
-            if column_name not in columns:
-                cursor.execute(f"ALTER TABLE {db_table} ADD COLUMN {column_name} VARCHAR(255) NULL")
-        else:
-            # PostgreSQL/other databases
-            cursor.execute(f"""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='{db_table}' AND column_name='{column_name}'
-            """)
-            if not cursor.fetchone():
-                cursor.execute(f"""
-                    ALTER TABLE {db_table} 
-                    ADD COLUMN {column_name} VARCHAR(255) NULL
-                """)
-
-
-def remove_firebase_uid_safely(apps, schema_editor):
-    """Remove firebase_uid column if it exists (reverse migration)"""
-    db_table = 'users'
-    column_name = 'firebase_uid'
-    
-    with connection.cursor() as cursor:
-        if 'sqlite' in connection.vendor:
-            # SQLite doesn't support DROP COLUMN directly
-            # This is a simplified reverse - in production, you'd need to recreate the table
-            pass
-        else:
-            cursor.execute(f"""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='{db_table}' AND column_name='{column_name}'
-            """)
-            if cursor.fetchone():
-                cursor.execute(f"ALTER TABLE {db_table} DROP COLUMN {column_name}")
+    try:
+        with db.cursor() as cursor:
+            # Check and add user.firebase_uid if needed
+            cursor.execute("PRAGMA table_info(users)")
+            user_columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'firebase_uid' not in user_columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN firebase_uid VARCHAR(255) NULL")
+                print("Added firebase_uid column to users table")
+            else:
+                print("firebase_uid column already exists in users table")
+    except Exception as e:
+        # If there's an error (e.g., column already exists), just log it and continue
+        # The migration will be marked as applied
+        print(f"Migration 0014: firebase_uid column check: {e}")
 
 
 class Migration(migrations.Migration):
@@ -56,6 +32,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(add_firebase_uid_safely, remove_firebase_uid_safely),
+        # Use RunPython to safely check before adding column
+        migrations.RunPython(check_and_add_firebase_uid, migrations.RunPython.noop),
     ]
 

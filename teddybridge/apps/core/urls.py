@@ -11,7 +11,6 @@ urlpatterns = [
     path('link/verify/<str:token>', views.verify_qr_token),
     path('link/patient', views.link_patient),
     path('teddy/chat', ai_views.teddy_ai_chat),
-    path('create-password', views.create_password),  # For Google-signup users to create password
 ]
 
 user_urlpatterns = [

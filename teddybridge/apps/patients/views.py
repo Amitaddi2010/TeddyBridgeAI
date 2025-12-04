@@ -15,35 +15,58 @@ def patient_stats(request):
     try:
         from django.utils import timezone
         from datetime import timedelta
+        import logging
         
-        patient = request.user.patient_profile
-    except Patient.DoesNotExist:
-        patient = Patient.objects.create(user=request.user)
-    
-    now = timezone.now()
-    one_month_ago = now - timedelta(days=30)
-    
-    # Current period stats
-    total_doctors = DoctorPatientLink.objects.filter(patient=patient).count()
-    upcoming = Meeting.objects.filter(patient=patient, status__in=['scheduled', 'in_progress']).count()
-    pending_surveys = Survey.objects.filter(assigned_patients__patient=patient).exclude(
-        id__in=SurveyResponse.objects.filter(patient=patient).values_list('survey_id', flat=True)
-    ).count()
-    completed_surveys = SurveyResponse.objects.filter(patient=patient).count()
-    
-    # Previous period stats (30 days ago)
-    previous_total_doctors = DoctorPatientLink.objects.filter(patient=patient, linked_at__lt=one_month_ago).count()
-    previous_completed_surveys = SurveyResponse.objects.filter(patient=patient, created_at__lt=one_month_ago).count()
-    
-    return Response({
-        'totalDoctors': total_doctors,
-        'upcomingAppointments': upcoming,
-        'pendingSurveys': pending_surveys,
-        'completedSurveys': completed_surveys,
-        # Previous period data for growth calculation
-        'previousTotalDoctors': previous_total_doctors,
-        'previousCompletedSurveys': previous_completed_surveys,
-    })
+        logger = logging.getLogger(__name__)
+        
+        # Get or create patient profile
+        try:
+            patient = request.user.patient_profile
+        except Patient.DoesNotExist:
+            patient = Patient.objects.create(user=request.user)
+            logger.info(f"Created patient profile for user {request.user.id}")
+        
+        now = timezone.now()
+        one_month_ago = now - timedelta(days=30)
+        
+        # Current period stats - using distinct() to ensure accurate counts
+        total_doctors = DoctorPatientLink.objects.filter(patient=patient).distinct().count()
+        
+        # Debug logging
+        logger.debug(f"Patient ID: {patient.id}, User ID: {request.user.id}")
+        logger.debug(f"Total doctors links found: {total_doctors}")
+        
+        upcoming = Meeting.objects.filter(patient=patient, status__in=['scheduled', 'in_progress']).count()
+        
+        # Get pending surveys - same logic as get_pending_surveys
+        doctor_ids = DoctorPatientLink.objects.filter(patient=patient).values_list('doctor_id', flat=True)
+        pending_surveys = Survey.objects.filter(
+            doctor_id__in=doctor_ids, 
+            is_active=True
+        ).exclude(
+            responses__patient=patient
+        ).count()
+        
+        completed_surveys = SurveyResponse.objects.filter(patient=patient).count()
+        
+        # Previous period stats (30 days ago)
+        previous_total_doctors = DoctorPatientLink.objects.filter(patient=patient, linked_at__lt=one_month_ago).distinct().count()
+        previous_completed_surveys = SurveyResponse.objects.filter(patient=patient, created_at__lt=one_month_ago).count()
+        
+        return Response({
+            'totalDoctors': total_doctors,
+            'upcomingAppointments': upcoming,
+            'pendingSurveys': pending_surveys,
+            'completedSurveys': completed_surveys,
+            # Previous period data for growth calculation
+            'previousTotalDoctors': previous_total_doctors,
+            'previousCompletedSurveys': previous_completed_surveys,
+        })
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in patient_stats: {str(e)}", exc_info=True)
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
 def get_doctors(request):

@@ -19,7 +19,7 @@ def patient_stats(request):
         
         logger = logging.getLogger(__name__)
         
-        # Get or create patient profile
+        # Get or create patient profile - use same pattern as get_doctors endpoint
         try:
             patient = request.user.patient_profile
         except Patient.DoesNotExist:
@@ -29,17 +29,17 @@ def patient_stats(request):
         now = timezone.now()
         one_month_ago = now - timedelta(days=30)
         
-        # Current period stats - count unique doctor-patient links
-        # Using .count() directly as DoctorPatientLink has unique_together constraint on (doctor, patient)
-        total_doctors = DoctorPatientLink.objects.filter(patient=patient).count()
+        # Current period stats - use exact same query pattern as get_doctors endpoint
+        links = DoctorPatientLink.objects.filter(patient=patient).select_related('doctor__user')
+        total_doctors = links.count()
         
-        # Debug logging
+        # Debug logging with detailed information
         logger.info(f"Patient stats request - Patient ID: {patient.id}, User ID: {request.user.id}, Email: {request.user.email}")
         logger.info(f"Total doctors links found: {total_doctors}")
         
-        # Additional verification - list all links
-        all_links = DoctorPatientLink.objects.filter(patient=patient).select_related('doctor__user')
-        logger.info(f"Links detail: {[(str(link.id), link.doctor.user.name if link.doctor else 'No doctor', str(link.patient.id)) for link in all_links]}")
+        # Additional verification - list all links with details
+        for link in links:
+            logger.info(f"Link ID: {link.id}, Doctor: {link.doctor.user.name if link.doctor and link.doctor.user else 'No doctor'}, Patient: {link.patient.id}")
         
         upcoming = Meeting.objects.filter(patient=patient, status__in=['scheduled', 'in_progress']).count()
         

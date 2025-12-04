@@ -550,7 +550,11 @@ def link_patient(request):
         if qr_token.used or qr_token.expires_at < timezone.now():
             return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
         
-        patient = request.user.patient_profile
+        # Get or create patient profile (ensure it exists)
+        try:
+            patient = request.user.patient_profile
+        except Patient.DoesNotExist:
+            patient = Patient.objects.create(user=request.user)
         
         if DoctorPatientLink.objects.filter(doctor=qr_token.doctor, patient=patient).exists():
             return Response({'error': 'Already linked'}, status=status.HTTP_400_BAD_REQUEST)
@@ -562,6 +566,11 @@ def link_patient(request):
         return Response({'success': True})
     except QRToken.DoesNotExist:
         return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in link_patient: {str(e)}", exc_info=True)
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 def upload_avatar(request):

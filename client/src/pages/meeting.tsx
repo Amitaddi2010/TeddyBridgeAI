@@ -842,14 +842,15 @@ export default function Meeting() {
           </Button>
           )}
 
-          {/* Recording (only for doctors and only if recording is enabled for this meeting type) */}
-          {user?.role === "doctor" && meetingInfo?.recordingEnabled && (
+          {/* Recording (only for doctors - enabled for all meetings to support AI note generation) */}
+          {user?.role === "doctor" && meetingInfo?.recordingEnabled !== false && (
             <Button
               variant={isRecording ? "destructive" : "secondary"}
               size="icon"
               className="w-14 h-14 rounded-full shadow-lg hover:scale-105 transition-transform"
               onClick={isRecording ? stopRecording : startRecording}
               disabled={startRecordingMutation.isPending || stopRecordingMutation.isPending}
+              title={isRecording ? "Stop Recording" : "Start Recording"}
             >
               <Circle className={`w-6 h-6 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
             </Button>

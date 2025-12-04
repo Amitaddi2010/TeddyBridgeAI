@@ -133,20 +133,39 @@ def user_login(request):
     email = request.data.get('email')
     password = request.data.get('password')
     
-    user = authenticate(request, email=email, password=password)
-    if user:
-        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-        request.session.save()
-        return Response({
-            'success': True,
-            'user': {
-                'id': str(user.id),
-                'email': user.email,
-                'name': user.name,
-                'role': user.role,
-            }
-        })
-    return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    if not email or not password:
+        return Response({'error': 'Email and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Since User model uses email as USERNAME_FIELD, authenticate() should work
+    # But if it doesn't, we'll manually check
+    user = authenticate(request, username=email, password=password)
+    
+    # If authenticate() returns None (default backend might not work with email), try manual check
+    if not user:
+        try:
+            user = User.objects.get(email=email)
+            if not user.check_password(password):
+                return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            # Check if user is active
+            if not user.is_active:
+                return Response({'error': 'Account is disabled'}, status=status.HTTP_403_FORBIDDEN)
+        except User.DoesNotExist:
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    # Login the user
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    request.session.save()
+    
+    return Response({
+        'success': True,
+        'user': {
+            'id': str(user.id),
+            'email': user.email,
+            'name': user.name,
+            'username': user.username,
+            'role': user.role,
+        }
+    })
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

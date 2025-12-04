@@ -56,7 +56,7 @@ def patient_stats(request):
         
         # Previous period stats (30 days ago)
         previous_total_doctors = DoctorPatientLink.objects.filter(patient=patient, linked_at__lt=one_month_ago).distinct().count()
-        previous_completed_surveys = SurveyResponse.objects.filter(patient=patient, created_at__lt=one_month_ago).count()
+        previous_completed_surveys = SurveyResponse.objects.filter(patient=patient, submitted_at__lt=one_month_ago).count()
         
         return Response({
             'totalDoctors': total_doctors,

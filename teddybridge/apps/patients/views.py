@@ -29,12 +29,17 @@ def patient_stats(request):
         now = timezone.now()
         one_month_ago = now - timedelta(days=30)
         
-        # Current period stats - using distinct() to ensure accurate counts
-        total_doctors = DoctorPatientLink.objects.filter(patient=patient).distinct().count()
+        # Current period stats - count unique doctor-patient links
+        # Using .count() directly as DoctorPatientLink has unique_together constraint on (doctor, patient)
+        total_doctors = DoctorPatientLink.objects.filter(patient=patient).count()
         
         # Debug logging
-        logger.debug(f"Patient ID: {patient.id}, User ID: {request.user.id}")
-        logger.debug(f"Total doctors links found: {total_doctors}")
+        logger.info(f"Patient stats request - Patient ID: {patient.id}, User ID: {request.user.id}, Email: {request.user.email}")
+        logger.info(f"Total doctors links found: {total_doctors}")
+        
+        # Additional verification - list all links
+        all_links = DoctorPatientLink.objects.filter(patient=patient).select_related('doctor__user')
+        logger.info(f"Links detail: {[(str(link.id), link.doctor.user.name if link.doctor else 'No doctor', str(link.patient.id)) for link in all_links]}")
         
         upcoming = Meeting.objects.filter(patient=patient, status__in=['scheduled', 'in_progress']).count()
         

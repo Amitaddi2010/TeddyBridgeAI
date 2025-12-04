@@ -56,6 +56,8 @@ export default function PatientDashboard() {
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/patient/stats"],
+    refetchInterval: 5000, // Refetch every 5 seconds to catch new links
+    refetchOnMount: true,
   });
 
   const { data: doctors, isLoading: doctorsLoading } = useQuery<LinkedDoctor[]>({

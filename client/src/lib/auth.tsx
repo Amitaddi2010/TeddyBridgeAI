@@ -97,7 +97,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: await res.text() }));
+        let errorData: any;
+        try {
+          errorData = await res.json();
+        } catch {
+          const errorText = await res.text();
+          errorData = { error: errorText };
+        }
         
         // Check for Google-signup error
         if (errorData.error === 'GOOGLE_SIGNUP_REQUIRED') {
@@ -134,7 +140,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         
         if (!res.ok) {
-          const errorData = await res.json().catch(() => ({ error: await res.text() }));
+          let errorData: any;
+          try {
+            errorData = await res.json();
+          } catch {
+            const errorText = await res.text();
+            errorData = { error: errorText };
+          }
           
           // Check for Google-signup error
           if (errorData.error === 'GOOGLE_SIGNUP_REQUIRED') {

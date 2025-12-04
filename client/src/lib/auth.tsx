@@ -177,7 +177,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const register = async (email: string, password: string, name: string, role: "doctor" | "patient") => {
+  const register = async (
+    email: string,
+    password: string,
+    name: string,
+    role: "doctor" | "patient",
+    additionalData?: {
+      username?: string;
+      specialty?: string;
+      city?: string;
+      gender?: string;
+      age?: string;
+      procedure?: string;
+      connectToPeers?: boolean;
+    }
+  ) => {
     // Create user in Firebase
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const token = await userCredential.user.getIdToken();
@@ -189,7 +203,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify({ email, password, name, role, firebaseUid: userCredential.user.uid }),
+      body: JSON.stringify({
+        email,
+        password,
+        name,
+        role,
+        firebaseUid: userCredential.user.uid,
+        ...(additionalData || {}),
+      }),
       credentials: "include",
     });
     if (!res.ok) {
@@ -199,7 +220,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchUser(token);
   };
 
-  const loginWithGoogle = async (role?: "doctor" | "patient") => {
+  const loginWithGoogle = async (
+    role?: "doctor" | "patient",
+    additionalData?: {
+      username?: string;
+      specialty?: string;
+      city?: string;
+      gender?: string;
+      age?: string;
+      procedure?: string;
+      connectToPeers?: boolean;
+    }
+  ) => {
     try {
       // Sign in with Google via Firebase
       const result = await signInWithPopup(auth, googleProvider);
@@ -225,7 +257,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name,
           ...(role && { role }),  // Only include role if provided
           firebaseUid: result.user.uid,
-          photoUrl
+          photoUrl,
+          ...(additionalData || {}),  // Include additional fields if provided
         }),
         credentials: "include",
       });

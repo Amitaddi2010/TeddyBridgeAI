@@ -80,10 +80,24 @@ export default function Register() {
   const onSubmit = async (data: RegisterInput) => {
     setIsLoading(true);
     try {
+      // Prepare additional data based on role
+      const additionalData = {
+        username: data.username || undefined,
+        ...(data.role === "doctor" ? {
+          specialty: data.specialty || undefined,
+          city: data.city || undefined,
+        } : {
+          gender: data.gender || undefined,
+          age: data.age || undefined,
+          procedure: data.procedure || undefined,
+          connectToPeers: data.connectToPeers || false,
+        }),
+      };
+
       // If this is a Google sign-in flow, complete the Google authentication
       if (isGoogleSignIn && googleSignInData) {
         // Complete Google sign-in with selected role
-        await loginWithGoogle(data.role);
+        await loginWithGoogle(data.role, additionalData);
         // Clear Google sign-in data
         sessionStorage.removeItem('googleSignInData');
         toast({
@@ -92,7 +106,7 @@ export default function Register() {
         });
       } else {
         // Regular registration
-        await register(data.email, data.password, data.name, data.role);
+        await register(data.email, data.password, data.name, data.role, additionalData);
         toast({
           title: "Account created!",
           description: "Welcome to TeddyBridge. Your account has been created successfully.",
@@ -271,7 +285,7 @@ export default function Register() {
                       name="city"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>City</FormLabel>
+                          <FormLabel>City <span className="text-red-500">*</span></FormLabel>
                           <FormControl>
                             <Input
                               placeholder="City"
@@ -553,7 +567,22 @@ export default function Register() {
                   onClick={async () => {
                     setIsGoogleLoading(true);
                     try {
-                      await loginWithGoogle(selectedRole);
+                      // Get form values for additional data
+                      const formData = form.getValues();
+                      const additionalData = {
+                        username: formData.username || undefined,
+                        ...(selectedRole === "doctor" ? {
+                          specialty: formData.specialty || undefined,
+                          city: formData.city || undefined,
+                        } : {
+                          gender: formData.gender || undefined,
+                          age: formData.age || undefined,
+                          procedure: formData.procedure || undefined,
+                          connectToPeers: formData.connectToPeers || false,
+                        }),
+                      };
+
+                      await loginWithGoogle(selectedRole, additionalData);
                       toast({
                         title: "Account created!",
                         description: "Welcome to TeddyBridge. Your account has been created successfully.",
@@ -569,6 +598,14 @@ export default function Register() {
                           variant: "destructive",
                           duration: 10000,
                         });
+                      } else if (error.requiresRoleSelection || error.message === "ROLE_SELECTION_REQUIRED") {
+                        // User needs to select role - redirect to register page
+                        sessionStorage.setItem('googleSignInData', JSON.stringify({
+                          email: error.email,
+                          name: error.name,
+                          photoUrl: error.photoUrl,
+                        }));
+                        setLocation(`/register?googleSignIn=true&email=${encodeURIComponent(error.email || '')}&name=${encodeURIComponent(error.name || '')}`);
                       } else {
                         toast({
                           title: "Registration failed",

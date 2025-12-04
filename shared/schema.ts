@@ -252,8 +252,8 @@ export const registerSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters").refine(
     (val) => !/^\d+$/.test(val),
     "Password can't be entirely numeric"
-  ),
-  confirmPassword: z.string().min(8, "Password must be at least 8 characters"),
+  ).optional(),
+  confirmPassword: z.string().min(8, "Password must be at least 8 characters").optional(),
   name: z.string().min(2, "Name must be at least 2 characters"),
   username: z.string().min(2, "Username must be at least 2 characters").optional(),
   role: z.enum(["doctor", "patient"]),
@@ -265,9 +265,50 @@ export const registerSchema = z.object({
   age: z.string().optional(),
   procedure: z.string().optional(),
   connectToPeers: z.boolean().optional(),
-}).refine((data) => data.password === data.confirmPassword, {
+}).refine((data) => {
+  // Password validation only required if not Google sign-in
+  // For Google sign-in, password fields are hidden and not required
+  if (data.password === undefined && data.confirmPassword === undefined) {
+    return true; // Google sign-in - skip password validation
+  }
+  return data.password === data.confirmPassword;
+}, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+}).superRefine((data, ctx) => {
+  // Validate required fields based on role
+  if (data.role === "doctor") {
+    if (!data.specialty || data.specialty.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Specialty is required",
+        path: ["specialty"],
+      });
+    }
+    if (!data.city || data.city.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "City is required",
+        path: ["city"],
+      });
+    }
+  }
+  if (data.role === "patient") {
+    if (!data.gender || data.gender.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Gender is required",
+        path: ["gender"],
+      });
+    }
+    if (!data.age || data.age.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Age is required",
+        path: ["age"],
+      });
+    }
+  }
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

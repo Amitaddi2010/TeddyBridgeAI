@@ -147,16 +147,16 @@ def get_meeting(request, meeting_id):
         room_name = str(meeting.id)
         token = generate_twilio_token(room_name, request.user.email)
         
-        # If Twilio token generation failed, log detailed error
-        if not token:
-            logger.warning(f"Twilio token generation failed for meeting {meeting.id}, user: {request.user.email}")
-            # Return error details in response for debugging
         # Determine meeting type: patient-doctor or doctor-doctor
         meeting_type = 'doctor-doctor' if meeting.patient is None else 'patient-doctor'
         # Recording enabled for all meetings to support AI note generation
         # For patient-doctor meetings, recording is still enabled but patient doesn't see the button
         recording_enabled = True
-            
+        
+        # If Twilio token generation failed, log detailed error
+        if not token:
+            logger.warning(f"Twilio token generation failed for meeting {meeting.id}, user: {request.user.email}")
+            # Return error details in response for debugging
             return Response({
                 'id': str(meeting.id),
                 'title': meeting.title,

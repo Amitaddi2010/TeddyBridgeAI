@@ -24,6 +24,8 @@ interface DashboardStats {
   upcomingAppointments: number;
   pendingSurveys: number;
   completedSurveys: number;
+  previousTotalDoctors?: number;
+  previousCompletedSurveys?: number;
 }
 
 interface LinkedDoctor {
@@ -87,6 +89,18 @@ export default function PatientDashboard() {
     });
   };
 
+  // Helper function to calculate growth percentage
+  const calculateGrowth = (current: number, previous: number | undefined): string | null => {
+    if (previous === undefined || previous === 0) {
+      return null; // No historical data
+    }
+    if (current === 0 && previous === 0) {
+      return null; // Both are zero
+    }
+    const growth = ((current - previous) / previous) * 100;
+    return growth > 0 ? `+${growth.toFixed(0)}%` : `${growth.toFixed(0)}%`;
+  };
+
   const statCards = [
     {
       title: "My Doctors",
@@ -95,7 +109,7 @@ export default function PatientDashboard() {
       color: "text-blue-600 dark:text-blue-400",
       bgColor: "bg-blue-50 dark:bg-blue-950/30",
       borderColor: "border-blue-200 dark:border-blue-800",
-      trend: "+2 new",
+      trend: calculateGrowth(stats?.totalDoctors ?? 0, stats?.previousTotalDoctors),
     },
     {
       title: "Upcoming Appointments",
@@ -104,7 +118,7 @@ export default function PatientDashboard() {
       color: "text-purple-600 dark:text-purple-400",
       bgColor: "bg-purple-50 dark:bg-purple-950/30",
       borderColor: "border-purple-200 dark:border-purple-800",
-      trend: "This week",
+      trend: null, // No historical data for appointments
     },
     {
       title: "Pending Surveys",
@@ -113,7 +127,7 @@ export default function PatientDashboard() {
       color: "text-orange-600 dark:text-orange-400",
       bgColor: "bg-orange-50 dark:bg-orange-950/30",
       borderColor: "border-orange-200 dark:border-orange-800",
-      trend: "To complete",
+      trend: null, // No historical data for pending surveys
     },
     {
       title: "Completed Surveys",
@@ -122,7 +136,7 @@ export default function PatientDashboard() {
       color: "text-green-600 dark:text-green-400",
       bgColor: "bg-green-50 dark:bg-green-950/30",
       borderColor: "border-green-200 dark:border-green-800",
-      trend: "+5 this month",
+      trend: calculateGrowth(stats?.completedSurveys ?? 0, stats?.previousCompletedSurveys),
     },
   ];
 
@@ -161,9 +175,20 @@ export default function PatientDashboard() {
               ) : (
                 <>
                   <div className="text-2xl font-bold">{stat.value}</div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {stat.trend}
-                  </p>
+                  {stat.trend ? (
+                    <p className={`text-xs mt-1 flex items-center gap-1 ${
+                      stat.trend.startsWith('+') ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      <TrendingUp className={`w-3 h-3 ${
+                        stat.trend.startsWith('+') ? 'text-green-600' : 'text-red-600 rotate-180'
+                      }`} />
+                      {stat.trend} from last month
+                    </p>
+                  ) : stat.value === 0 ? (
+                    <p className="text-xs text-muted-foreground mt-1">No data yet</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">No change</p>
+                  )}
                 </>
               )}
             </CardContent>

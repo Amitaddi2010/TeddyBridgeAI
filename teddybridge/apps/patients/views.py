@@ -13,20 +13,36 @@ def patient_stats(request):
         return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
     
     try:
+        from django.utils import timezone
+        from datetime import timedelta
+        
         patient = request.user.patient_profile
     except Patient.DoesNotExist:
         patient = Patient.objects.create(user=request.user)
     
+    now = timezone.now()
+    one_month_ago = now - timedelta(days=30)
+    
+    # Current period stats
     total_doctors = DoctorPatientLink.objects.filter(patient=patient).count()
     upcoming = Meeting.objects.filter(patient=patient, status__in=['scheduled', 'in_progress']).count()
-    pending_surveys = 0
+    pending_surveys = Survey.objects.filter(assigned_patients__patient=patient).exclude(
+        id__in=SurveyResponse.objects.filter(patient=patient).values_list('survey_id', flat=True)
+    ).count()
     completed_surveys = SurveyResponse.objects.filter(patient=patient).count()
+    
+    # Previous period stats (30 days ago)
+    previous_total_doctors = DoctorPatientLink.objects.filter(patient=patient, linked_at__lt=one_month_ago).count()
+    previous_completed_surveys = SurveyResponse.objects.filter(patient=patient, created_at__lt=one_month_ago).count()
     
     return Response({
         'totalDoctors': total_doctors,
         'upcomingAppointments': upcoming,
         'pendingSurveys': pending_surveys,
         'completedSurveys': completed_surveys,
+        # Previous period data for growth calculation
+        'previousTotalDoctors': previous_total_doctors,
+        'previousCompletedSurveys': previous_completed_surveys,
     })
 
 @api_view(['GET'])

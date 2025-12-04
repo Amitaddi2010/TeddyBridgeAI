@@ -23,15 +23,27 @@ def doctor_stats(request):
     
     try:
         doctor = request.user.doctor_profile
+        now = timezone.now()
+        one_month_ago = now - timedelta(days=30)
+        
+        # Current period stats
         total_patients = DoctorPatientLink.objects.filter(doctor=doctor).count()
         upcoming = Meeting.objects.filter(doctor=doctor, status__in=['scheduled', 'in_progress']).count()
         completed = Meeting.objects.filter(doctor=doctor, status='completed').count()
+        pending_notes = CallNote.objects.filter(meeting__doctor=doctor, meeting__status='completed').exclude(chief_complaint__isnull=False).count()
+        
+        # Previous period stats (30 days ago)
+        previous_total_patients = DoctorPatientLink.objects.filter(doctor=doctor, linked_at__lt=one_month_ago).count()
+        previous_completed = Meeting.objects.filter(doctor=doctor, status='completed', scheduled_at__lt=one_month_ago).count()
         
         return Response({
             'totalPatients': total_patients,
             'upcomingAppointments': upcoming,
             'completedMeetings': completed,
-            'pendingNotes': 0,
+            'pendingNotes': pending_notes,
+            # Previous period data for growth calculation
+            'previousTotalPatients': previous_total_patients,
+            'previousCompletedMeetings': previous_completed,
         })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

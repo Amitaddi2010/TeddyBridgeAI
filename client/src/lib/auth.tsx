@@ -112,7 +112,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         
         // Firebase error - try Django auth as fallback
-        // This handles cases where user was created with Django auth but Firebase is enabled
         const res = await fetch(getApiUrl("/auth/login"), {
           method: "POST",
           headers: { 
@@ -123,29 +122,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (!res.ok) {
           const errorText = await res.text();
-          let errorMessage = errorText;
-          try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.error || errorText;
-          } catch {
-            // If not JSON, use the text as-is
-          }
           // Provide user-friendly error message
-          if (error.code === 'auth/user-not-found' || errorMessage.includes('not found')) {
+          if (error.code === 'auth/user-not-found') {
             throw new Error("User not found. Please register first.");
-          } else if (error.code === 'auth/wrong-password' || errorMessage.includes('Invalid credentials') || errorMessage.includes('Invalid password')) {
+          } else if (error.code === 'auth/wrong-password') {
             throw new Error("Incorrect password. Please try again.");
-          } else if (error.code === 'auth/invalid-email' || errorMessage.includes('Invalid email')) {
+          } else if (error.code === 'auth/invalid-email') {
             throw new Error("Invalid email address.");
           }
-          throw new Error(errorMessage || error.message || "Login failed");
+          throw new Error(errorText || error.message || "Login failed");
         }
-        const loginData = await res.json();
-        if (loginData.success) {
-          await fetchUser();
-        } else {
-          throw new Error(loginData.error || "Login failed");
-        }
+        await fetchUser();
       } else {
         throw error;
       }

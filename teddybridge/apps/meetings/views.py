@@ -178,8 +178,9 @@ def get_meeting(request, meeting_id):
         
         # Determine meeting type: patient-doctor or doctor-doctor
         meeting_type = 'doctor-doctor' if meeting.patient is None else 'patient-doctor'
-        # Recording is only enabled for doctor-doctor meetings
-        recording_enabled = meeting_type == 'doctor-doctor'
+        # Recording enabled for all meetings to support AI note generation
+        # For patient-doctor meetings, recording is still enabled but patient doesn't see the button
+        recording_enabled = True
         
         return Response({
             'id': str(meeting.id),

@@ -687,9 +687,9 @@ export default function Meeting() {
     }
   }, [showConsentModal]);
 
-  // Consent modal (only show if recording is enabled for this meeting)
+  // Consent modal (only show if recording is enabled and user is a doctor)
   useEffect(() => {
-    if (meetingInfo && meetingInfo.recordingEnabled && !meetingInfo.hasConsented && isJoined && user?.role === "doctor") {
+    if (meetingInfo && meetingInfo.recordingEnabled !== false && !meetingInfo.hasConsented && isJoined && user?.role === "doctor") {
       setShowConsentModal(true);
     }
   }, [meetingInfo, isJoined, user?.role]);

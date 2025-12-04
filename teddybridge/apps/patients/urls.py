@@ -7,6 +7,8 @@ urlpatterns = [
     path('surveys/pending', views.get_pending_surveys),
     path('surveys/completed', views.get_completed_surveys),
     path('appointments/upcoming', views.get_appointments_upcoming),
+    path('appointments/recent', views.get_appointments_recent),
+    path('appointments/statistics', views.get_appointment_statistics),
     path('appointments', views.get_appointments),
     path('reviews/submit', review_views.submit_review),
     path('reviews/doctor/<uuid:doctor_id>', review_views.get_doctor_reviews),

@@ -2,7 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from teddybridge.apps.core.models import Patient, DoctorPatientLink, Meeting, Survey, SurveyResponse, Doctor, DoctorReview, ChatMessage
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Q, Max
 
 @api_view(['GET'])
 def patient_stats(request):
@@ -19,7 +19,7 @@ def patient_stats(request):
         
         logger = logging.getLogger(__name__)
         
-        # Get or create patient profile - use same pattern as get_doctors endpoint
+        # Get or create patient profile
         try:
             patient = request.user.patient_profile
         except Patient.DoesNotExist:
@@ -27,23 +27,30 @@ def patient_stats(request):
             logger.info(f"Created patient profile for user {request.user.id}")
         
         now = timezone.now()
-        one_month_ago = now - timedelta(days=30)
         
-        # Current period stats - use exact same query pattern as get_doctors endpoint
+        # Get period parameter (default to 'month')
+        period = request.GET.get('period', 'month')
+        if period == 'week':
+            start_date = now - timedelta(days=7)
+        elif period == 'year':
+            start_date = now - timedelta(days=365)
+        else:
+            start_date = now - timedelta(days=30)
+        
+        # Previous period for comparison
+        period_days = (now - start_date).days
+        previous_start = start_date - timedelta(days=period_days)
+        
+        # Current period stats
         links = DoctorPatientLink.objects.filter(patient=patient).select_related('doctor__user')
         total_doctors = links.count()
         
-        # Debug logging with detailed information
-        logger.info(f"Patient stats request - Patient ID: {patient.id}, User ID: {request.user.id}, Email: {request.user.email}")
-        logger.info(f"Total doctors links found: {total_doctors}")
-        
-        # Additional verification - list all links with details
-        for link in links:
-            logger.info(f"Link ID: {link.id}, Doctor: {link.doctor.user.name if link.doctor and link.doctor.user else 'No doctor'}, Patient: {link.patient.id}")
-        
         upcoming = Meeting.objects.filter(patient=patient, status__in=['scheduled', 'in_progress']).count()
+        completed = Meeting.objects.filter(patient=patient, status='completed', scheduled_at__gte=start_date).count()
+        cancelled = Meeting.objects.filter(patient=patient, status='cancelled', scheduled_at__gte=start_date).count()
+        total_consultations = Meeting.objects.filter(patient=patient).count()
         
-        # Get pending surveys - same logic as get_pending_surveys
+        # Get pending surveys
         doctor_ids = DoctorPatientLink.objects.filter(patient=patient).values_list('doctor_id', flat=True)
         pending_surveys = Survey.objects.filter(
             doctor_id__in=doctor_ids, 
@@ -54,18 +61,43 @@ def patient_stats(request):
         
         completed_surveys = SurveyResponse.objects.filter(patient=patient).count()
         
-        # Previous period stats (30 days ago)
-        previous_total_doctors = DoctorPatientLink.objects.filter(patient=patient, linked_at__lt=one_month_ago).distinct().count()
-        previous_completed_surveys = SurveyResponse.objects.filter(patient=patient, submitted_at__lt=one_month_ago).count()
+        # Previous period stats for growth calculation
+        previous_total_doctors = DoctorPatientLink.objects.filter(
+            patient=patient, 
+            linked_at__gte=previous_start, 
+            linked_at__lt=start_date
+        ).distinct().count()
+        previous_completed_surveys = SurveyResponse.objects.filter(
+            patient=patient, 
+            submitted_at__gte=previous_start,
+            submitted_at__lt=start_date
+        ).count()
+        previous_completed = Meeting.objects.filter(
+            patient=patient,
+            status='completed',
+            scheduled_at__gte=previous_start,
+            scheduled_at__lt=start_date
+        ).count()
+        previous_cancelled = Meeting.objects.filter(
+            patient=patient,
+            status='cancelled',
+            scheduled_at__gte=previous_start,
+            scheduled_at__lt=start_date
+        ).count()
         
         return Response({
             'totalDoctors': total_doctors,
             'upcomingAppointments': upcoming,
+            'completedAppointments': completed,
+            'cancelledAppointments': cancelled,
+            'totalConsultations': total_consultations,
             'pendingSurveys': pending_surveys,
             'completedSurveys': completed_surveys,
             # Previous period data for growth calculation
             'previousTotalDoctors': previous_total_doctors,
             'previousCompletedSurveys': previous_completed_surveys,
+            'previousCompletedAppointments': previous_completed,
+            'previousCancelledAppointments': previous_cancelled,
         })
     except Exception as e:
         import logging
@@ -108,6 +140,22 @@ def get_doctors(request):
     ).values('sender_id').annotate(count=Count('id'))
     unread_dict = {str(r['sender_id']): r['count'] for r in unread_counts}
     
+    # Get appointment counts and last consultation date for each doctor
+    appointment_counts = Meeting.objects.filter(
+        patient=patient,
+        doctor_id__in=doctor_ids
+    ).values('doctor_id').annotate(
+        appointment_count=Count('id'),
+        last_consultation=Max('scheduled_at')
+    )
+    appointments_dict = {
+        str(r['doctor_id']): {
+            'appointmentCount': r['appointment_count'],
+            'lastConsultation': r['last_consultation'].isoformat() if r['last_consultation'] else None
+        }
+        for r in appointment_counts
+    }
+    
     result = []
     for link in links:
         doctor_id_str = str(link.doctor.id)
@@ -115,20 +163,23 @@ def get_doctors(request):
         review_info = reviews_dict.get(doctor_id_str, {'avgRating': None, 'reviewCount': 0})
         patient_rating = patient_reviews.get(doctor_id_str)
         unread_count = unread_dict.get(doctor_user_id_str, 0)
+        appointment_info = appointments_dict.get(doctor_id_str, {'appointmentCount': 0, 'lastConsultation': None})
         
         result.append({
             'id': doctor_id_str,  # Doctor model ID (for reviews)
             'userId': doctor_user_id_str,  # User ID (for peer chat)
-        'name': link.doctor.user.name,
+            'name': link.doctor.user.name,
             'email': link.doctor.user.email,
-        'specialty': link.doctor.specialty,
-        'avatar': link.doctor.user.avatar_url,
+            'specialty': link.doctor.specialty,
+            'avatar': link.doctor.user.avatar_url,
             'bio': link.doctor.bio,
-        'linkedAt': link.linked_at.isoformat(),
+            'linkedAt': link.linked_at.isoformat(),
             'avgRating': review_info['avgRating'],
             'reviewCount': review_info['reviewCount'],
             'patientRating': patient_rating,
             'unreadMessageCount': unread_count,
+            'appointmentCount': appointment_info['appointmentCount'],
+            'lastConsultation': appointment_info['lastConsultation'],
         })
     
     return Response(result)
@@ -201,24 +252,178 @@ def get_appointments_upcoming(request):
         return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
     
     try:
+        from django.utils import timezone
+        from datetime import timedelta
+        
         patient = request.user.patient_profile
     except Patient.DoesNotExist:
         patient = Patient.objects.create(user=request.user)
     
+    now = timezone.now()
+    
+    # Get filter parameter
+    filter_type = request.GET.get('filter', 'all')  # today, week, month, all
+    
+    if filter_type == 'today':
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        meetings = Meeting.objects.filter(
+            patient=patient,
+            status__in=['scheduled', 'in_progress'],
+            scheduled_at__gte=start_date,
+            scheduled_at__lte=end_date
+        ).select_related('doctor__user', 'doctor').order_by('scheduled_at')
+    elif filter_type == 'week':
+        start_date = now - timedelta(days=7)
+        meetings = Meeting.objects.filter(
+            patient=patient,
+            status__in=['scheduled', 'in_progress'],
+            scheduled_at__gte=start_date
+        ).select_related('doctor__user', 'doctor').order_by('scheduled_at')
+    elif filter_type == 'month':
+        start_date = now - timedelta(days=30)
+        meetings = Meeting.objects.filter(
+            patient=patient,
+            status__in=['scheduled', 'in_progress'],
+            scheduled_at__gte=start_date
+        ).select_related('doctor__user', 'doctor').order_by('scheduled_at')
+    else:
+        meetings = Meeting.objects.filter(
+            patient=patient,
+            status__in=['scheduled', 'in_progress']
+        ).select_related('doctor__user', 'doctor').order_by('scheduled_at')
+    
+    result = []
+    for m in meetings[:20]:  # Limit to 20
+        result.append({
+            'id': str(m.id),
+            'appointmentId': f"AP{m.id.hex[:8].upper()}",
+            'doctorName': m.doctor.user.name,
+            'doctorAvatar': m.doctor.user.avatar_url,
+            'doctorId': str(m.doctor.id),
+            'specialty': m.doctor.specialty,
+            'title': m.title,
+            'scheduledAt': m.scheduled_at.isoformat() if m.scheduled_at else None,
+            'status': m.status,
+            'meetingUrl': m.meeting_url,
+            'isOnline': bool(m.meeting_url and m.meeting_url.strip()),
+        })
+    
+    return Response(result)
+
+@api_view(['GET'])
+def get_appointments_recent(request):
+    """Get recent appointments with full details for table"""
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    if request.user.role != 'patient':
+        return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        patient = request.user.patient_profile
+    except Patient.DoesNotExist:
+        patient = Patient.objects.create(user=request.user)
+    
+    # Get filter parameters
+    status_filter = request.GET.get('status', 'all')  # all, completed, upcoming, cancelled
+    limit = int(request.GET.get('limit', 10))
+    
+    meetings_query = Meeting.objects.filter(patient=patient).select_related('doctor__user', 'doctor').order_by('-scheduled_at', '-created_at')
+    
+    if status_filter == 'completed':
+        meetings_query = meetings_query.filter(status='completed')
+    elif status_filter == 'upcoming':
+        meetings_query = meetings_query.filter(status__in=['scheduled', 'in_progress'])
+    elif status_filter == 'cancelled':
+        meetings_query = meetings_query.filter(status='cancelled')
+    
+    meetings = meetings_query[:limit]
+    
+    result = []
+    for m in meetings:
+        result.append({
+            'id': str(m.id),
+            'appointmentId': f"AP{m.id.hex[:8].upper()}",
+            'doctorName': m.doctor.user.name,
+            'doctorAvatar': m.doctor.user.avatar_url,
+            'doctorId': str(m.doctor.id),
+            'specialty': m.doctor.specialty,
+            'scheduledAt': m.scheduled_at.isoformat() if m.scheduled_at else None,
+            'startedAt': m.started_at.isoformat() if m.started_at else None,
+            'endedAt': m.ended_at.isoformat() if m.ended_at else None,
+            'title': m.title,
+            'status': m.status,
+            'meetingUrl': m.meeting_url,
+            'isOnline': bool(m.meeting_url and m.meeting_url.strip()),
+            'createdAt': m.created_at.isoformat() if m.created_at else None,
+        })
+    
+    return Response(result)
+
+@api_view(['GET'])
+def get_appointment_statistics(request):
+    """Get appointment statistics for chart (grouped by period)"""
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    if request.user.role != 'patient':
+        return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        patient = request.user.patient_profile
+    except Patient.DoesNotExist:
+        patient = Patient.objects.create(user=request.user)
+    
+    # Get period parameter
+    period = request.GET.get('period', 'monthly')  # monthly, weekly, yearly
+    
+    now = timezone.now()
+    
+    if period == 'weekly':
+        days = 7
+        date_format = '%Y-%m-%d'
+    elif period == 'yearly':
+        days = 365
+        date_format = '%Y-%m'
+    else:  # monthly
+        days = 30
+        date_format = '%Y-%m-%d'
+    
+    start_date = now - timedelta(days=days)
+    
     meetings = Meeting.objects.filter(
         patient=patient,
-        status__in=['scheduled', 'in_progress']
-    ).select_related('doctor__user')[:5]
+        scheduled_at__gte=start_date
+    ).values('status', 'scheduled_at')
     
-    result = [{
-        'id': str(m.id),
-        'doctorName': m.doctor.user.name,
-        'doctorAvatar': m.doctor.user.avatar_url,
-        'specialty': m.doctor.specialty,
-        'title': m.title,
-        'scheduledAt': m.scheduled_at.isoformat() if m.scheduled_at else None,
-        'status': m.status,
-    } for m in meetings]
+    # Group by date and status
+    stats = {}
+    for m in meetings:
+        if m['scheduled_at']:
+            date_key = m['scheduled_at'].strftime(date_format)
+            if date_key not in stats:
+                stats[date_key] = {'completed': 0, 'upcoming': 0, 'cancelled': 0}
+            
+            if m['status'] == 'completed':
+                stats[date_key]['completed'] += 1
+            elif m['status'] in ['scheduled', 'in_progress']:
+                stats[date_key]['upcoming'] += 1
+            elif m['status'] == 'cancelled':
+                stats[date_key]['cancelled'] += 1
+    
+    # Convert to list format for chart
+    result = []
+    for date_key in sorted(stats.keys()):
+        result.append({
+            'date': date_key,
+            'completed': stats[date_key]['completed'],
+            'upcoming': stats[date_key]['upcoming'],
+            'cancelled': stats[date_key]['cancelled'],
+        })
     
     return Response(result)
 

@@ -317,9 +317,17 @@ def upload_recording(request, meeting_id):
             logger.info(f"Starting transcription with AssemblyAI for meeting {meeting_id}, file size: {audio_file.size} bytes")
             
             try:
-                # Start transcription (this is async)
-                transcript = transcriber.transcribe(audio_file)
-                logger.info(f"Transcription started, ID: {transcript.id}, status: {transcript.status}")
+                # Configure transcription with speaker diarization to distinguish doctor and patient
+                # This is CRITICAL for accurate AI notes - we need to know who said what
+                config = aai.TranscriptionConfig(
+                    speaker_labels=True,  # Enable speaker diarization
+                    speakers_expected=2,  # Expect 2 speakers (doctor and patient)
+                    language_code="en"  # English language
+                )
+                
+                # Start transcription with speaker diarization (this is async)
+                transcript = transcriber.transcribe(audio_file, config=config)
+                logger.info(f"Transcription started with speaker diarization, ID: {transcript.id}, status: {transcript.status}")
                 
                 # Wait for transcription to complete (poll every 2 seconds, max 5 minutes)
                 import time
@@ -341,32 +349,68 @@ def upload_recording(request, meeting_id):
                 
                 if transcript.status == aai.TranscriptStatus.completed:
                     logger.info(f"Transcription completed for meeting {meeting_id}, text length: {len(transcript.text)}")
-                    meeting.transcript_text = transcript.text
+                    
+                    # Format transcript with speaker labels for better AI understanding
+                    # AssemblyAI provides utterances with speaker labels when diarization is enabled
+                    formatted_transcript = transcript.text
+                    if hasattr(transcript, 'utterances') and transcript.utterances:
+                        # Build a formatted transcript with speaker labels (Speaker A, Speaker B, etc.)
+                        formatted_parts = []
+                        for utterance in transcript.utterances:
+                            speaker_label = f"Speaker {utterance.speaker}"
+                            formatted_parts.append(f"{speaker_label}: {utterance.text}")
+                        formatted_transcript = "\n".join(formatted_parts)
+                        logger.info(f"Formatted transcript with {len(transcript.utterances)} utterances from {len(set(u.speaker for u in transcript.utterances))} speakers")
+                    else:
+                        # Fallback to plain text if utterances not available
+                        formatted_transcript = transcript.text
+                        logger.warning("Speaker diarization utterances not available, using plain transcript")
+                    
+                    meeting.transcript_text = formatted_transcript
                     meeting.status = 'transcription_completed'
                     meeting.save()
                     
-                    # Generate AI notes using Groq
+                    # Generate AI notes using Groq with speaker-labeled transcript
                     groq_client = get_groq_client()
                     if groq_client:
-                        logger.info("Generating AI notes with Groq...")
-                        prompt = f"""Analyze this medical consultation transcript and extract structured clinical notes in JSON format.
+                        logger.info("Generating AI notes with Groq using speaker-labeled transcript...")
+                        
+                        # Get doctor and patient names for better context
+                        doctor_name = meeting.doctor.user.name if meeting.doctor else "Doctor"
+                        patient_name = meeting.patient.user.name if meeting.patient else "Patient"
+                        
+                        prompt = f"""You are a clinical summarization assistant. Analyze this medical consultation transcript and extract structured clinical notes.
 
-Transcript:
-{transcript.text}
+IMPORTANT: This transcript contains a TWO-WAY conversation between a doctor and patient. The transcript includes speaker labels (Speaker A, Speaker B, etc.). 
+- Speaker A is typically the {doctor_name} (doctor)
+- Speaker B is typically the {patient_name} (patient)
 
-Provide a JSON object with the following structure:
+Focus on extracting information from BOTH the patient's statements (chief complaint, symptoms, history) AND the doctor's observations and assessments.
+
+Transcript with speaker labels:
+{formatted_transcript}
+
+Provide a JSON object with the following structure (return ONLY valid JSON, no markdown):
 {{
-  "chiefComplaint": "Main reason for visit",
-  "hpi": "History of present illness",
-  "pastMedicalHistory": "Past medical conditions",
-  "medications": "Current medications",
-  "allergies": "Known allergies",
-  "examObservations": "Physical examination findings",
-  "assessment": "Clinical assessment",
-  "plan": "Treatment plan"
+  "chiefComplaint": "Main reason for visit (from patient's statements)",
+  "hpi": "History of present illness (from patient's description and doctor's questions)",
+  "pastMedicalHistory": "Past medical conditions mentioned by patient",
+  "medications": "Current medications mentioned by patient",
+  "allergies": "Known allergies mentioned by patient",
+  "examObservations": "Physical examination findings mentioned by doctor",
+  "assessment": "Clinical assessment and diagnosis from doctor",
+  "plan": "Treatment plan, tests ordered, prescriptions, and follow-up instructions from doctor",
+  "urgentFlags": ["Any urgent issues that need immediate attention"],
+  "followUpQuestions": ["3 short follow-up questions for the patient"]
 }}
 
-Return only valid JSON, no markdown formatting."""
+CRITICAL INSTRUCTIONS:
+- Extract information from BOTH patient responses AND doctor questions/observations
+- Do NOT hallucinate medications or tests - only include what was actually mentioned
+- If something is uncertain, mark it as "uncertain" or "not mentioned"
+- Keep all fields brief and factual
+- The patient's statements contain their symptoms and history
+- The doctor's statements contain observations, assessments, and treatment plans"""
                         
                         try:
                             response = groq_client.chat.completions.create(
@@ -390,7 +434,7 @@ Return only valid JSON, no markdown formatting."""
                             try:
                                 notes_data = json.loads(ai_response_cleaned)
                                 
-                                # Create CallNote with parsed data
+                                # Create CallNote with parsed data including speaker-labeled transcript
                                 call_note = CallNote.objects.create(
                                     meeting=meeting,
                                     chief_complaint=notes_data.get('chiefComplaint', ''),
@@ -401,7 +445,15 @@ Return only valid JSON, no markdown formatting."""
                                     exam_observations=notes_data.get('examObservations', ''),
                                     assessment=notes_data.get('assessment', ''),
                                     plan=notes_data.get('plan', ''),
-                                    ai_metadata={'raw_response': ai_response, 'transcript': transcript.text, 'parsed': True}
+                                    urgent_flags=notes_data.get('urgentFlags', []),
+                                    follow_up_questions=notes_data.get('followUpQuestions', []),
+                                    ai_metadata={
+                                        'raw_response': ai_response, 
+                                        'transcript': formatted_transcript, 
+                                        'original_transcript': transcript.text,
+                                        'parsed': True,
+                                        'has_speaker_labels': hasattr(transcript, 'utterances') and transcript.utterances is not None
+                                    }
                                 )
                                 
                                 logger.info(f"CallNote created successfully for meeting {meeting_id}, note ID: {call_note.id}")

@@ -98,6 +98,10 @@ export default function Meeting() {
   const attachedVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
   const attachedAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const localVideoElementRef = useRef<HTMLVideoElement | null>(null);
+  
+  // Store remote tracks for recording
+  const remoteAudioTracksRef = useRef<Map<string, MediaStreamTrack>>(new Map());
+  const remoteVideoTracksRef = useRef<Map<string, MediaStreamTrack>>(new Map());
 
   // Configure Twilio logging
   useEffect(() => {
@@ -176,6 +180,11 @@ export default function Meeting() {
         container.appendChild(element);
         localVideoElementRef.current = element;
       } else {
+        // Store remote track for recording
+        if (track && track.mediaStreamTrack) {
+          remoteVideoTracksRef.current.set(participantIdentity, track.mediaStreamTrack);
+        }
+        
         // Remote video - check if already attached
         if (attachedVideoElementsRef.current.has(participantIdentity)) {
           const existing = attachedVideoElementsRef.current.get(participantIdentity);
@@ -209,6 +218,11 @@ export default function Meeting() {
 
   const attachAudioTrack = useCallback((track: any, participantIdentity: string) => {
     try {
+      // Store remote track for recording
+      if (track && track.mediaStreamTrack) {
+        remoteAudioTracksRef.current.set(participantIdentity, track.mediaStreamTrack);
+      }
+      
       // Check if already attached
       if (attachedAudioElementsRef.current.has(participantIdentity)) {
         const existing = attachedAudioElementsRef.current.get(participantIdentity);
@@ -262,12 +276,16 @@ export default function Meeting() {
             fallback.style.display = 'flex';
           }
         }
+        // Remove from recording refs
+        remoteVideoTracksRef.current.delete(participantIdentity);
       } else {
         const element = attachedAudioElementsRef.current.get(participantIdentity);
         if (element) {
           element.remove();
           attachedAudioElementsRef.current.delete(participantIdentity);
         }
+        // Remove from recording refs
+        remoteAudioTracksRef.current.delete(participantIdentity);
       }
       track.detach();
     } catch (error) {
@@ -582,17 +600,65 @@ export default function Meeting() {
     setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
   }, [user?.role, setLocation]);
 
-  // Recording functions
+  // Recording functions - Capture BOTH doctor and patient audio/video
   const startRecording = useCallback(async () => {
     try {
       if (roomRef.current) {
+        // Create a mixed stream with BOTH local (doctor) and remote (patient) tracks
         const stream = new MediaStream();
+        
+        // Add local (doctor) audio track
         if (localAudioTrackRef.current) {
           stream.addTrack(localAudioTrackRef.current.mediaStreamTrack);
         }
+        
+        // Add local (doctor) video track
         if (localVideoTrackRef.current) {
           stream.addTrack(localVideoTrackRef.current.mediaStreamTrack);
         }
+        
+        // IMPORTANT: Add remote (patient) audio tracks for complete conversation
+        // This ensures both sides of the conversation are recorded
+        remoteAudioTracksRef.current.forEach((track, participantId) => {
+          if (track && track.readyState === 'live') {
+            stream.addTrack(track);
+            console.log(`Added remote audio track from participant: ${participantId}`);
+          }
+        });
+        
+        // Add remote (patient) video tracks if available
+        remoteVideoTracksRef.current.forEach((track, participantId) => {
+          if (track && track.readyState === 'live') {
+            stream.addTrack(track);
+            console.log(`Added remote video track from participant: ${participantId}`);
+          }
+        });
+        
+        // Also add tracks from currently connected participants
+        if (roomRef.current.participants) {
+          roomRef.current.participants.forEach((participant: any) => {
+            participant.audioTracks.forEach((publication: any) => {
+              if (publication.track && publication.track.mediaStreamTrack) {
+                const track = publication.track.mediaStreamTrack;
+                if (track.readyState === 'live' && !stream.getAudioTracks().some(t => t.id === track.id)) {
+                  stream.addTrack(track);
+                  console.log(`Added remote audio track from participant: ${participant.identity}`);
+                }
+              }
+            });
+            participant.videoTracks.forEach((publication: any) => {
+              if (publication.track && publication.track.mediaStreamTrack) {
+                const track = publication.track.mediaStreamTrack;
+                if (track.readyState === 'live' && !stream.getVideoTracks().some(t => t.id === track.id)) {
+                  stream.addTrack(track);
+                  console.log(`Added remote video track from participant: ${participant.identity}`);
+                }
+              }
+            });
+          });
+        }
+        
+        console.log(`Recording stream created with ${stream.getAudioTracks().length} audio tracks and ${stream.getVideoTracks().length} video tracks`);
         
         const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
         const chunks: Blob[] = [];

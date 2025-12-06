@@ -29,6 +29,7 @@ import Monitor from "@/pages/doctor/monitor";
 import PatientDashboard from "@/pages/patient/dashboard";
 import PatientSurveys from "@/pages/patient/surveys";
 import PatientDoctors from "@/pages/patient/doctors";
+import DoctorDetail from "@/pages/patient/doctor-detail";
 import PatientAppointments from "@/pages/patient/appointments";
 import Meeting from "@/pages/meeting";
 import LinkPatient from "@/pages/link-patient";
@@ -145,6 +146,7 @@ function Router() {
       <Route path="/patient/dashboard" component={() => <ProtectedRoute component={PatientDashboard} allowedRoles={["patient"]} />} />
       <Route path="/patient/surveys" component={() => <ProtectedRoute component={PatientSurveys} allowedRoles={["patient"]} />} />
       <Route path="/patient/doctors" component={() => <ProtectedRoute component={PatientDoctors} allowedRoles={["patient"]} />} />
+      <Route path="/patient/doctors/:id" component={() => <ProtectedRoute component={DoctorDetail} allowedRoles={["patient"]} />} />
       <Route path="/patient/appointments" component={() => <ProtectedRoute component={PatientAppointments} allowedRoles={["patient"]} />} />
       
       <Route path="/meeting/:id" component={() => <ProtectedRoute component={Meeting} />} />

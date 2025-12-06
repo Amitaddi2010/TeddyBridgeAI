@@ -4,6 +4,7 @@ from . import views, review_views
 urlpatterns = [
     path('stats', views.patient_stats),
     path('doctors', views.get_doctors),
+    path('doctors/<uuid:doctor_id>', views.get_doctor),
     path('surveys/pending', views.get_pending_surveys),
     path('surveys/completed', views.get_completed_surveys),
     path('appointments/upcoming', views.get_appointments_upcoming),

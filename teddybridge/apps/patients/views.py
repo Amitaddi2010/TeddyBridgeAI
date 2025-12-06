@@ -185,6 +185,64 @@ def get_doctors(request):
     return Response(result)
 
 @api_view(['GET'])
+def get_doctor(request, doctor_id):
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    if request.user.role != 'patient':
+        return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        patient = request.user.patient_profile
+    except Patient.DoesNotExist:
+        patient = Patient.objects.create(user=request.user)
+    
+    # Verify that this doctor is linked to the patient
+    link = DoctorPatientLink.objects.filter(patient=patient, doctor_id=doctor_id).select_related('doctor__user').first()
+    
+    if not link:
+        return Response({'error': 'Doctor not found or not linked'}, status=status.HTTP_404_NOT_FOUND)
+    
+    doctor = link.doctor
+    appointments = Meeting.objects.filter(patient=patient, doctor=doctor).order_by('-scheduled_at')[:5]
+    
+    # Get review statistics
+    reviews_data = DoctorReview.objects.filter(doctor=doctor).aggregate(
+        avg_rating=Avg('rating'),
+        review_count=Count('id')
+    )
+    
+    # Get patient's review if exists
+    patient_review = DoctorReview.objects.filter(patient=patient, doctor=doctor).first()
+    
+    # Get appointment statistics
+    total_appointments = Meeting.objects.filter(patient=patient, doctor=doctor).count()
+    completed_appointments = Meeting.objects.filter(patient=patient, doctor=doctor, status='completed').count()
+    
+    return Response({
+        'id': str(doctor.id),
+        'userId': str(doctor.user.id),
+        'name': doctor.user.name,
+        'email': doctor.user.email,
+        'specialty': doctor.specialty,
+        'city': doctor.city,
+        'avatar': doctor.user.avatar_url,
+        'bio': doctor.bio,
+        'linkedAt': link.linked_at.isoformat(),
+        'avgRating': float(reviews_data['avg_rating']) if reviews_data['avg_rating'] else None,
+        'reviewCount': reviews_data['review_count'],
+        'patientRating': patient_review.rating if patient_review else None,
+        'totalAppointments': total_appointments,
+        'completedAppointments': completed_appointments,
+        'recentAppointments': [{
+            'id': str(m.id),
+            'title': m.title,
+            'scheduledAt': m.scheduled_at.isoformat() if m.scheduled_at else None,
+            'status': m.status,
+        } for m in appointments],
+    })
+
+@api_view(['GET'])
 def get_pending_surveys(request):
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)

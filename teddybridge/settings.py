@@ -124,6 +124,9 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'None' if IS_PRODUCTION else 'Lax'
 SESSION_COOKIE_SECURE = IS_PRODUCTION  # True for HTTPS, False for HTTP
 SESSION_COOKIE_DOMAIN = None
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30  # 30 days in seconds
+SESSION_SAVE_EVERY_REQUEST = True  # Refresh session on every request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session alive across browser restarts
 
 # CSRF Cookie Configuration
 CSRF_COOKIE_HTTPONLY = False

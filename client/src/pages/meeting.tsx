@@ -93,6 +93,7 @@ export default function Meeting() {
   const isConnectingRef = useRef<boolean>(false);
   const connectedParticipantsRef = useRef<Set<string>>(new Set());
   const consentScrollRef = useRef<HTMLDivElement>(null);
+  const recordingUploadPromiseRef = useRef<Promise<void> | null>(null);
   
   // Track element refs - prevent duplicate attachments
   const attachedVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
@@ -154,6 +155,13 @@ export default function Meeting() {
       const formData = new FormData();
       formData.append("recording", blob, "recording.webm");
       const res = await apiRequest("POST", `/api/meetings/${meetingId}/uploadRecording`, formData);
+      return res.json();
+    },
+  });
+
+  const endMeetingMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/meetings/${meetingId}/endMeeting`, {});
       return res.json();
     },
   });
@@ -577,28 +585,71 @@ export default function Meeting() {
     // If switching back to video mode, user can enable video manually
   }, [isAudioOnly]);
 
-  // End call
+  // End call - ensure recording is uploaded and meeting status is updated
   const handleEndCall = useCallback(async () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
+    try {
+      // Stop recording if active
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        console.log("Stopping recording before ending call...");
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
+        
+        // Wait for upload to complete (max 15 seconds)
+        if (recordingUploadPromiseRef.current) {
+          try {
+            await Promise.race([
+              recordingUploadPromiseRef.current,
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout")), 15000))
+            ]);
+            console.log("Recording upload completed before ending call");
+          } catch (err) {
+            console.warn("Recording upload not completed yet, but proceeding to end call:", err);
+          }
+        } else {
+          // Wait a bit for the upload promise to be created
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      
+      // Mark meeting as ended on backend
+      try {
+        await endMeetingMutation.mutateAsync();
+        console.log("Meeting marked as ended");
+      } catch (err) {
+        console.error("Failed to mark meeting as ended:", err);
+        // Continue anyway - don't block user from leaving
+      }
+      
+      // Clean up media streams
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
+      }
+      
+      // Disconnect from room
+      if (roomRef.current) {
+        roomRef.current.disconnect();
+        roomRef.current = null;
+      }
+      
+      // Stop local tracks
+      if (localVideoTrackRef.current) {
+        localVideoTrackRef.current.stop();
+        localVideoTrackRef.current = null;
+      }
+      if (localAudioTrackRef.current) {
+        localAudioTrackRef.current.stop();
+        localAudioTrackRef.current = null;
+      }
+      
+      // Navigate away
+      setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
+    } catch (err) {
+      console.error("Error ending call:", err);
+      // Navigate away even if there's an error
+      setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
     }
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-    if (roomRef.current) {
-      roomRef.current.disconnect();
-      roomRef.current = null;
-    }
-    if (localVideoTrackRef.current) {
-      localVideoTrackRef.current.stop();
-      localVideoTrackRef.current = null;
-    }
-    if (localAudioTrackRef.current) {
-      localAudioTrackRef.current.stop();
-      localAudioTrackRef.current = null;
-    }
-    setLocation(user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
-  }, [user?.role, setLocation]);
+  }, [user?.role, setLocation, endMeetingMutation]);
 
   // Recording functions - Capture BOTH doctor and patient audio/video
   const startRecording = useCallback(async () => {
@@ -671,7 +722,29 @@ export default function Meeting() {
         
         recorder.onstop = async () => {
           const blob = new Blob(chunks, { type: 'video/webm' });
-          await uploadRecordingMutation.mutateAsync(blob);
+          console.log(`Recording stopped, uploading blob of size ${blob.size} bytes...`);
+          setIsRecording(false);
+          
+          // Store the upload promise so we can wait for it
+          recordingUploadPromiseRef.current = uploadRecordingMutation.mutateAsync(blob)
+            .then(() => {
+              console.log("Recording uploaded successfully");
+              recordingUploadPromiseRef.current = null;
+            })
+            .catch((err) => {
+              console.error("Failed to upload recording:", err);
+              recordingUploadPromiseRef.current = null;
+            });
+          
+          // Wait for upload to complete (with timeout)
+          try {
+            await Promise.race([
+              recordingUploadPromiseRef.current,
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Upload timeout")), 30000))
+            ]);
+          } catch (err) {
+            console.error("Recording upload error or timeout:", err);
+          }
         };
         
         recorder.start();

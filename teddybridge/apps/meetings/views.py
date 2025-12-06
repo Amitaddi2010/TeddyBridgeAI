@@ -285,6 +285,45 @@ def start_recording(request, meeting_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+def end_meeting(request, meeting_id):
+    """Mark meeting as completed when call ends"""
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        meeting = Meeting.objects.get(id=meeting_id)
+        
+        # Set ended_at timestamp
+        if not meeting.ended_at:
+            meeting.ended_at = timezone.now()
+        
+        # Update status based on current state
+        if meeting.status == 'in_progress':
+            # If recording was started, set to transcription_pending
+            # The upload_recording endpoint will update status after transcription completes
+            meeting.status = 'transcription_pending'
+            logger.info(f"Meeting {meeting_id} marked as transcription_pending (waiting for recording upload)")
+        elif meeting.status in ['scheduled', 'transcription_pending']:
+            # If no recording was started, or already pending, keep status or mark as completed
+            # transcription_pending means we're waiting for upload, so keep it
+            if meeting.status == 'scheduled':
+                meeting.status = 'completed'
+                logger.info(f"Meeting {meeting_id} marked as completed (no recording)")
+        # Don't change status if already completed/failed
+        
+        meeting.save()
+        logger.info(f"Meeting {meeting_id} ended at {meeting.ended_at}, status: {meeting.status}")
+        
+        return Response({'success': True, 'status': meeting.status})
+    except Meeting.DoesNotExist:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error ending meeting {meeting_id}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
 def upload_recording(request, meeting_id):
     if not request.user.is_authenticated:
         return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)

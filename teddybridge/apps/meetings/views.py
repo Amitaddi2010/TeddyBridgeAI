@@ -285,6 +285,24 @@ def start_recording(request, meeting_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
+def stop_recording(request, meeting_id):
+    """Stop recording - just update status, recording will be uploaded when MediaRecorder stops"""
+    if not request.user.is_authenticated:
+        return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    try:
+        meeting = Meeting.objects.get(id=meeting_id)
+        # Don't change status here - recording will be uploaded when MediaRecorder stops
+        # The status will be updated by upload_recording endpoint
+        logger.info(f"Recording stopped for meeting {meeting_id} by {request.user.email}")
+        return Response({'success': True})
+    except Meeting.DoesNotExist:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error stopping recording for meeting {meeting_id}: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
 def end_meeting(request, meeting_id):
     """Mark meeting as completed when call ends"""
     if not request.user.is_authenticated:
@@ -554,10 +572,16 @@ CRITICAL INSTRUCTIONS:
                 meeting.save()
         else:
             logger.warning(f"No recording file found in request for meeting {meeting_id}")
-            meeting.status = 'completed'
-            meeting.ended_at = timezone.now()
+            # If meeting is already in transcription_pending or in_progress, mark as completed
+            if meeting.status in ['transcription_pending', 'in_progress']:
+                meeting.status = 'completed'
+            if not meeting.ended_at:
+                meeting.ended_at = timezone.now()
             meeting.save()
+            logger.info(f"Meeting {meeting_id} marked as completed (no recording file provided)")
+            return Response({'success': True, 'status': meeting.status, 'message': 'No recording file provided, meeting marked as completed'})
         
+        # Ensure ended_at is set
         if not meeting.ended_at:
             meeting.ended_at = timezone.now()
             meeting.save()
